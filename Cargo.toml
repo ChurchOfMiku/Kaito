@@ -1,0 +1,7 @@
+[package]
+name = "kaito"
+version = "0.1.0"
+authors = ["Mats A. <mats@mats.sh>"]
+edition = "2018"
+
+[dependencies]
