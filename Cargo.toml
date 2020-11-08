@@ -7,6 +7,11 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
-tokio = { version = "0.2", features = ["macros"] }
-serenity = "0.9"
+futures = "0.3"
+parking_lot = "0.11"
+tokio = { version = "0.2", features = ["macros", "rt-threaded"] }
+serde = "1.0"
+serde_derive = "1.0"
+serenity = { version = "0.9", default-features = false, features = ["client", "cache", "gateway", "rustls_backend", "model"] }
 thiserror = "1.0"
+toml = "0.5"
