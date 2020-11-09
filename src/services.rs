@@ -4,7 +4,30 @@ use std::sync::Arc;
 
 pub mod discord;
 
-use crate::bot::Bot;
+use crate::{bot::Bot, config::ConfigServices};
+
+macro_rules! services {
+    ($services_struct:ident, $($service_ident:ident => $service:ty),*) => {
+        pub struct $services_struct {
+            $(pub $service_ident: Option<ServiceWrapper<$service>>),+
+        }
+
+        impl $services_struct {
+            #[allow(unused_variables)]
+            pub async fn init(bot: Arc<Bot>, config: &ConfigServices) -> Result<Arc<$services_struct>> {
+                Ok(Arc::new($services_struct {
+                    $(
+                        $service_ident: if let Some(service_config) = config.$service_ident.clone() {
+                            Some(ServiceWrapper::new(<$service>::init(bot, service_config).await?))
+                        } else {
+                            None
+                        }
+                    ),+
+                }))
+            }
+        }
+    };
+}
 
 pub enum ServiceKind {
     Discord,
@@ -69,4 +92,24 @@ pub enum ChannelId {
 
 pub enum ServerId {
     Discord(u64),
+}
+
+pub struct ServiceWrapper<S: Service> {
+    service: Arc<S>,
+}
+
+impl<S: Service> ServiceWrapper<S> {
+    pub fn new(service: Arc<S>) -> ServiceWrapper<S> {
+        ServiceWrapper { service }
+    }
+
+    #[allow(dead_code)]
+    pub fn service(&self) -> &Arc<S> {
+        &self.service
+    }
+}
+
+services! {
+    Services,
+    discord => discord::DiscordService
 }
