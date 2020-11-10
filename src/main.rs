@@ -8,6 +8,9 @@ extern crate serde_derive;
 use anyhow::Result;
 use std::env;
 
+#[macro_use]
+mod settings;
+
 mod bot;
 mod config;
 mod modules;

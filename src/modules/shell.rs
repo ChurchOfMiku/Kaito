@@ -5,9 +5,19 @@ use super::{Module, ModuleKind};
 use crate::{
     bot::Bot,
     services::{Message, Service},
+    settings::prelude::*,
 };
 
-pub struct ShellModule {}
+pub struct ShellModule {
+    settings: Arc<ShellModuleSettings>,
+}
+
+settings! {
+    ShellModuleSettings,
+    {
+        enable: bool => (true, SettingFlags::empty(), "Enable the shell module", [])
+    }
+}
 
 #[async_trait]
 impl Module for ShellModule {
@@ -15,9 +25,12 @@ impl Module for ShellModule {
     const NAME: &'static str = "Shell";
 
     type ModuleConfig = ();
+    type ModuleSettings = ShellModuleSettings;
 
     async fn load(_bot: Arc<Bot>, _config: ()) -> Result<Arc<Self>> {
-        Ok(Arc::new(ShellModule {}))
+        Ok(Arc::new(ShellModule {
+            settings: ShellModuleSettings::create()?,
+        }))
     }
 
     async fn message(&self, _msg: Arc<dyn Message<impl Service>>) {}

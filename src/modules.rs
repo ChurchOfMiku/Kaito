@@ -50,6 +50,7 @@ pub trait Module: 'static + Send + Sync + Sized {
     const NAME: &'static str;
 
     type ModuleConfig: Clone + Deserialize<'static> + Serialize + std::fmt::Debug;
+    type ModuleSettings;
 
     async fn load(bot: Arc<Bot>, config: Self::ModuleConfig) -> Result<Arc<Self>>;
 
