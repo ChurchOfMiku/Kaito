@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate async_trait;
 #[macro_use]
+extern crate bitflags;
+#[macro_use]
 extern crate serde_derive;
 
 use anyhow::Result;

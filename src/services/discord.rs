@@ -15,7 +15,7 @@ mod message;
 mod server;
 mod user;
 
-use super::{Service, ServiceKind};
+use super::{Service, ServiceFeatures, ServiceKind};
 use crate::bot::Bot;
 
 pub struct DiscordService {
@@ -63,6 +63,11 @@ impl EventHandler for SerenityHandler {
 impl Service for DiscordService {
     const KIND: ServiceKind = ServiceKind::Discord;
     const NAME: &'static str = "Discord";
+    const FEATURES: ServiceFeatures = ServiceFeatures::from_bits_truncate(
+        ServiceFeatures::EMBEDS.bits()
+            | ServiceFeatures::REACTIONS.bits()
+            | ServiceFeatures::VOICE.bits(),
+    );
 
     type ServiceConfig = DiscordServiceConfig;
     type Message = message::DiscordMessage;

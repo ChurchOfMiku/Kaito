@@ -37,6 +37,7 @@ pub enum ServiceKind {
 pub trait Service: 'static + Sized + Send + Sync {
     const KIND: ServiceKind;
     const NAME: &'static str;
+    const FEATURES: ServiceFeatures;
 
     type ServiceConfig: Clone + Deserialize<'static> + Serialize + std::fmt::Debug;
     type Message: Message<Self>;
@@ -46,6 +47,14 @@ pub trait Service: 'static + Sized + Send + Sync {
 
     async fn init(bot: Arc<Bot>, config: Self::ServiceConfig) -> Result<Arc<Self>>;
     async fn unload(&self) -> Result<()>;
+}
+
+bitflags! {
+    pub struct ServiceFeatures: u32 {
+        const EMBEDS = 1;
+        const REACTIONS = 1 << 1;
+        const VOICE = 1 << 2;
+    }
 }
 
 #[async_trait]
