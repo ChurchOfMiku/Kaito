@@ -75,6 +75,10 @@ impl Service for DiscordService {
     type Channel = channel::DiscordChannel;
     type Server = server::DiscordServer;
 
+    type ChannelId = u64;
+    type ServerId = u64;
+    type UserId = u64;
+
     async fn init(bot: Arc<Bot>, config: Self::ServiceConfig) -> Result<Arc<Self>> {
         let service = Arc::new(DiscordService {
             bot,

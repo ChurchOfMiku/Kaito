@@ -56,6 +56,8 @@ pub trait Module: 'static + Send + Sync + Sized {
 
     // TODO: Move message to type alias when impl's inside type aliases becomes stable
     async fn message(&self, msg: Arc<dyn Message<impl Service>>);
+
+    fn enabled(&self) -> bool;
 }
 
 pub struct ModuleWrapper<M: Module> {

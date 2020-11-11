@@ -7,7 +7,7 @@ pub mod discord;
 use crate::{bot::Bot, config::ConfigServices};
 
 macro_rules! services {
-    ($services_struct:ident, $($service_ident:ident => $service:ty),*) => {
+    ($services_struct:ident, $($service_ident:ident => ($service_module_ident:ident, $service:ty)),*) => {
         pub struct $services_struct {
             $(pub $service_ident: Option<ServiceWrapper<$service>>),+
         }
@@ -26,11 +26,23 @@ macro_rules! services {
                 }))
             }
         }
-    };
-}
 
-pub enum ServiceKind {
-    Discord,
+        pub enum ChannelId {
+            $($service_module_ident (<$service as Service>::ChannelId)),+
+        }
+
+        pub enum ServerId {
+            $($service_module_ident (<$service as Service>::ServerId)),+
+        }
+
+        pub enum UserId {
+            $($service_module_ident (<$service as Service>::UserId)),+
+        }
+
+        pub enum ServiceKind {
+            $($service_module_ident),+
+        }
+    };
 }
 
 #[async_trait]
@@ -44,6 +56,10 @@ pub trait Service: 'static + Sized + Send + Sync {
     type User: User<Self>;
     type Channel: Channel<Self>;
     type Server: Server<Self>;
+
+    type ChannelId;
+    type ServerId;
+    type UserId;
 
     async fn init(bot: Arc<Bot>, config: Self::ServiceConfig) -> Result<Arc<Self>>;
     async fn unload(&self) -> Result<()>;
@@ -91,18 +107,6 @@ pub trait Server<S: Service>: Send + Sync {
     fn service(&self) -> &Arc<S>;
 }
 
-pub enum UserId {
-    Discord(u64),
-}
-
-pub enum ChannelId {
-    Discord(u64),
-}
-
-pub enum ServerId {
-    Discord(u64),
-}
-
 pub struct ServiceWrapper<S: Service> {
     service: Arc<S>,
 }
@@ -120,5 +124,5 @@ impl<S: Service> ServiceWrapper<S> {
 
 services! {
     Services,
-    discord => discord::DiscordService
+    discord => (Discord, discord::DiscordService)
 }

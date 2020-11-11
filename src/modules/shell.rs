@@ -15,7 +15,8 @@ pub struct ShellModule {
 settings! {
     ShellModuleSettings,
     {
-        enable: bool => (true, SettingFlags::empty(), "Enable the shell module", [])
+        enable: bool => (true, SettingFlags::SERVER_OVERRIDE, "Enable the shell module", []),
+        prefix: String => ("$".into(), SettingFlags::empty(), "Set the message prefix for shell commands", [max_len => 8])
     }
 }
 
@@ -34,4 +35,8 @@ impl Module for ShellModule {
     }
 
     async fn message(&self, _msg: Arc<dyn Message<impl Service>>) {}
+
+    fn enabled(&self) -> bool {
+        *self.settings.enable.value()
+    }
 }
