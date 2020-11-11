@@ -66,7 +66,8 @@ impl Service for DiscordService {
     const FEATURES: ServiceFeatures = ServiceFeatures::from_bits_truncate(
         ServiceFeatures::EMBEDS.bits()
             | ServiceFeatures::REACTIONS.bits()
-            | ServiceFeatures::VOICE.bits(),
+            | ServiceFeatures::VOICE.bits()
+            | ServiceFeatures::MARKDOWN.bits(),
     );
 
     type ServiceConfig = DiscordServiceConfig;

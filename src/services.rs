@@ -74,6 +74,7 @@ bitflags! {
         const EMBEDS = 1;
         const REACTIONS = 1 << 1;
         const VOICE = 1 << 2;
+        const MARKDOWN = 1 << 3;
     }
 }
 
