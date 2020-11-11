@@ -59,7 +59,7 @@ pub trait Module: 'static + Send + Sync + Sized {
     // TODO: Move message to type alias when impl's inside type aliases becomes stable
     async fn message(&self, msg: Arc<dyn Message<impl Service>>) -> Result<()>;
 
-    fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> bool;
+    async fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> Result<bool>;
 
     fn kind(&self) -> ModuleKind {
         Self::KIND

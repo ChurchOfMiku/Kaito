@@ -40,7 +40,11 @@ impl Module for ShellModule {
         let server = channel.server().await?;
 
         // Find the shell prefix for the channel
-        let prefix = self.settings.prefix.value(server.id(), channel.id());
+        let prefix = self
+            .settings
+            .prefix
+            .value(server.id(), channel.id())
+            .await?;
 
         let content = msg.content();
 
@@ -52,7 +56,7 @@ impl Module for ShellModule {
         Ok(())
     }
 
-    fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> bool {
-        self.settings.enable.value(server_id, channel_id)
+    async fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> Result<bool> {
+        self.settings.enable.value(server_id, channel_id).await
     }
 }

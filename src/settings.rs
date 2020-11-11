@@ -50,8 +50,8 @@ where
     help: String,
     parameters: T::Parameters,
     default: T,
-    channel_values: DashMap<ChannelId, T>,
-    server_values: DashMap<ServerId, T>,
+    cached_channel_values: DashMap<ChannelId, T>,
+    cached_server_values: DashMap<ServerId, T>,
 }
 
 impl<T> Setting<T>
@@ -74,41 +74,76 @@ where
             flags,
             help,
             default,
-            channel_values: DashMap::new(),
-            server_values: DashMap::new(),
+            cached_channel_values: DashMap::new(),
+            cached_server_values: DashMap::new(),
         })
     }
 
-    pub fn value(&self, server_id: ServerId, channel_id: ChannelId) -> T {
+    pub async fn value(&self, server_id: ServerId, channel_id: ChannelId) -> Result<T> {
         if self.flags.contains(SettingFlags::SERVER_OVERRIDE) {
-            self.get_server_value(server_id)
-                .or_else(|| self.get_channel_value(channel_id))
-                .unwrap_or_else(|| self.default.clone())
+            if let Some(value) = self.get_server_value(server_id).await? {
+                return Ok(value);
+            }
+
+            if let Some(value) = self.get_channel_value(channel_id).await? {
+                return Ok(value);
+            }
+
+            Ok(self.default.clone())
         } else {
-            self.get_channel_value(channel_id)
-                .or_else(|| self.get_server_value(server_id))
-                .unwrap_or_else(|| self.default.clone())
+            if let Some(value) = self.get_channel_value(channel_id).await? {
+                return Ok(value);
+            }
+
+            if let Some(value) = self.get_server_value(server_id).await? {
+                return Ok(value);
+            }
+
+            Ok(self.default.clone())
         }
     }
 
-    fn get_channel_value(&self, channel_id: ChannelId) -> Option<T> {
-        self.channel_values
-            .get(&channel_id)
-            .map(|v| v.value().clone())
+    pub fn flush_cache(&self) {
+        self.cached_channel_values.clear();
+        self.cached_server_values.clear();
     }
 
-    fn get_server_value(&self, server_id: ServerId) -> Option<T> {
-        self.server_values
+    async fn get_channel_value(&self, channel_id: ChannelId) -> Result<Option<T>> {
+        if let Some(cached) = self
+            .cached_channel_values
+            .get(&channel_id)
+            .map(|v| v.value().clone())
+        {
+            Ok(Some(cached))
+        } else {
+            // TODO: Read DB
+            Ok(None)
+        }
+    }
+
+    async fn get_server_value(&self, server_id: ServerId) -> Result<Option<T>> {
+        if let Some(cached) = self
+            .cached_server_values
             .get(&server_id)
             .map(|v| v.value().clone())
+        {
+            Ok(Some(cached))
+        } else {
+            // TODO: Read DB
+            Ok(None)
+        }
     }
 
     pub fn set_value(&self, ctx: SettingContext, input: &str) -> Result<()> {
         let value = T::set_value(input, &self.parameters)?;
 
+        // TODO: Insert to DB
+
         match ctx {
-            SettingContext::Channel(channel_id) => self.channel_values.insert(channel_id, value),
-            SettingContext::Server(server_id) => self.server_values.insert(server_id, value),
+            SettingContext::Channel(channel_id) => {
+                self.cached_channel_values.insert(channel_id, value)
+            }
+            SettingContext::Server(server_id) => self.cached_server_values.insert(server_id, value),
         };
 
         Ok(())
