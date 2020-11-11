@@ -4,7 +4,7 @@ use std::sync::Arc;
 use super::{Module, ModuleKind};
 use crate::{
     bot::Bot,
-    services::{ChannelId, Message, ServerId, Service},
+    services::{Channel, ChannelId, Message, Server, ServerId, Service},
     settings::prelude::*,
 };
 
@@ -34,7 +34,23 @@ impl Module for ShellModule {
         }))
     }
 
-    async fn message(&self, _msg: Arc<dyn Message<impl Service>>) {}
+    async fn message(&self, msg: Arc<dyn Message<impl Service>>) -> Result<()> {
+        // Get the channel and server
+        let channel = msg.channel().await?;
+        let server = channel.server().await?;
+
+        // Find the shell prefix for the channel
+        let prefix = self.settings.prefix.value(server.id(), channel.id());
+
+        let content = msg.content();
+
+        let _rest = match content.strip_prefix(&prefix) {
+            Some(rest) => rest,
+            None => return Ok(()),
+        };
+
+        Ok(())
+    }
 
     fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> bool {
         self.settings.enable.value(server_id, channel_id)

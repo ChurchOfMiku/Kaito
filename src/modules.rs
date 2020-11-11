@@ -30,7 +30,9 @@ macro_rules! modules_loader {
             pub async fn message(&self, msg: Arc<dyn Message<impl Service>>) {
                 $(
                     if self.$module_ident.is_enabled() {
-                        self.$module_ident.module().message(msg.clone()).await;
+                        if let Err(err) = self.$module_ident.module().message(msg.clone()).await {
+                            println!("error during executing module {}: {}", self.$module_ident.module().name(), err.to_string())
+                        };
                     }
                 )+
             }
@@ -55,9 +57,16 @@ pub trait Module: 'static + Send + Sync + Sized {
     async fn load(bot: Arc<Bot>, config: Self::ModuleConfig) -> Result<Arc<Self>>;
 
     // TODO: Move message to type alias when impl's inside type aliases becomes stable
-    async fn message(&self, msg: Arc<dyn Message<impl Service>>);
+    async fn message(&self, msg: Arc<dyn Message<impl Service>>) -> Result<()>;
 
     fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> bool;
+
+    fn kind(&self) -> ModuleKind {
+        Self::KIND
+    }
+    fn name(&self) -> &'static str {
+        Self::NAME
+    }
 }
 
 pub struct ModuleWrapper<M: Module> {
