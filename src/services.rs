@@ -27,18 +27,22 @@ macro_rules! services {
             }
         }
 
+        #[derive(Copy, Clone, Hash, Eq, PartialEq)]
         pub enum ChannelId {
             $($service_module_ident (<$service as Service>::ChannelId)),+
         }
 
+        #[derive(Copy, Clone, Hash, Eq, PartialEq)]
         pub enum ServerId {
             $($service_module_ident (<$service as Service>::ServerId)),+
         }
 
+        #[derive(Copy, Clone, Hash, Eq, PartialEq)]
         pub enum UserId {
             $($service_module_ident (<$service as Service>::UserId)),+
         }
 
+        #[derive(Copy, Clone, Hash, PartialEq)]
         pub enum ServiceKind {
             $($service_module_ident),+
         }

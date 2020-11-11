@@ -7,7 +7,7 @@ mod shell;
 use crate::{
     bot::Bot,
     config::Config,
-    services::{Message, Service},
+    services::{ChannelId, Message, ServerId, Service},
 };
 
 macro_rules! modules_loader {
@@ -57,7 +57,7 @@ pub trait Module: 'static + Send + Sync + Sized {
     // TODO: Move message to type alias when impl's inside type aliases becomes stable
     async fn message(&self, msg: Arc<dyn Message<impl Service>>);
 
-    fn enabled(&self) -> bool;
+    fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> bool;
 }
 
 pub struct ModuleWrapper<M: Module> {

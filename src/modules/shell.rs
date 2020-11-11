@@ -4,7 +4,7 @@ use std::sync::Arc;
 use super::{Module, ModuleKind};
 use crate::{
     bot::Bot,
-    services::{Message, Service},
+    services::{ChannelId, Message, ServerId, Service},
     settings::prelude::*,
 };
 
@@ -36,7 +36,7 @@ impl Module for ShellModule {
 
     async fn message(&self, _msg: Arc<dyn Message<impl Service>>) {}
 
-    fn enabled(&self) -> bool {
-        *self.settings.enable.value()
+    fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> bool {
+        self.settings.enable.value(server_id, channel_id)
     }
 }

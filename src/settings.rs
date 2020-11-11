@@ -1,5 +1,5 @@
 use anyhow::Result;
-use parking_lot::{RwLock, RwLockReadGuard};
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use thiserror::Error;
@@ -49,7 +49,9 @@ where
     flags: SettingFlags,
     help: String,
     parameters: T::Parameters,
-    value: RwLock<T>,
+    default: T,
+    channel_values: DashMap<ChannelId, T>,
+    server_values: DashMap<ServerId, T>,
 }
 
 impl<T> Setting<T>
@@ -59,24 +61,57 @@ where
 {
     pub fn create(
         name: &str,
-        value: T,
+        default: T,
         parameters: T::Parameters,
         flags: SettingFlags,
         help: String,
     ) -> Result<Setting<T>> {
-        SettingValue::is_valid(&value, &parameters)?;
+        SettingValue::is_valid(&default, &parameters)?;
 
         Ok(Setting {
             name: name.to_string(),
-            value: RwLock::new(value),
             parameters: parameters,
             flags,
             help,
+            default,
+            channel_values: DashMap::new(),
+            server_values: DashMap::new(),
         })
     }
 
-    pub fn value(&self) -> RwLockReadGuard<T> {
-        self.value.read()
+    pub fn value(&self, server_id: ServerId, channel_id: ChannelId) -> T {
+        if self.flags.contains(SettingFlags::SERVER_OVERRIDE) {
+            self.get_server_value(server_id)
+                .or_else(|| self.get_channel_value(channel_id))
+                .unwrap_or_else(|| self.default.clone())
+        } else {
+            self.get_channel_value(channel_id)
+                .or_else(|| self.get_server_value(server_id))
+                .unwrap_or_else(|| self.default.clone())
+        }
+    }
+
+    fn get_channel_value(&self, channel_id: ChannelId) -> Option<T> {
+        self.channel_values
+            .get(&channel_id)
+            .map(|v| v.value().clone())
+    }
+
+    fn get_server_value(&self, server_id: ServerId) -> Option<T> {
+        self.server_values
+            .get(&server_id)
+            .map(|v| v.value().clone())
+    }
+
+    pub fn set_value(&self, ctx: SettingContext, input: &str) -> Result<()> {
+        let value = T::set_value(input, &self.parameters)?;
+
+        match ctx {
+            SettingContext::Channel(channel_id) => self.channel_values.insert(channel_id, value),
+            SettingContext::Server(server_id) => self.server_values.insert(server_id, value),
+        };
+
+        Ok(())
     }
 }
 
