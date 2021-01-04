@@ -8,29 +8,29 @@ use crate::{
     settings::prelude::*,
 };
 
-pub struct ShellModule {
-    settings: Arc<ShellModuleSettings>,
+pub struct LuaModule {
+    settings: Arc<LuaModuleSettings>,
 }
 
 settings! {
-    ShellModuleSettings,
+    LuaModuleSettings,
     {
-        enable: bool => (true, SettingFlags::SERVER_OVERRIDE, "Enable the shell module", []),
-        prefix: String => ("$".into(), SettingFlags::empty(), "Set the message prefix for shell commands", [max_len => 8])
+        enable: bool => (true, SettingFlags::SERVER_OVERRIDE, "Enable the lua module", []),
+        prefix: String => ("&".into(), SettingFlags::empty(), "Set the message prefix for lua commands", [max_len => 8])
     }
 }
 
 #[async_trait]
-impl Module for ShellModule {
-    const KIND: ModuleKind = ModuleKind::Shell;
-    const NAME: &'static str = "Shell";
+impl Module for LuaModule {
+    const KIND: ModuleKind = ModuleKind::Lua;
+    const NAME: &'static str = "Lua";
 
     type ModuleConfig = ();
-    type ModuleSettings = ShellModuleSettings;
+    type ModuleSettings = LuaModuleSettings;
 
     async fn load(_bot: Arc<Bot>, _config: ()) -> Result<Arc<Self>> {
-        Ok(Arc::new(ShellModule {
-            settings: ShellModuleSettings::create()?,
+        Ok(Arc::new(LuaModule {
+            settings: LuaModuleSettings::create()?,
         }))
     }
 
@@ -39,7 +39,7 @@ impl Module for ShellModule {
         let channel = msg.channel().await?;
         let server = channel.server().await?;
 
-        // Find the shell prefix for the channel
+        // Find the lua prefix for the channel
         let prefix = self
             .settings
             .prefix

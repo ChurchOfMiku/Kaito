@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-mod shell;
+mod lua;
 
 use crate::{
     bot::Bot,
@@ -88,11 +88,11 @@ impl<M: Module> ModuleWrapper<M> {
 }
 
 pub enum ModuleKind {
-    Shell,
+    Lua,
 }
 
 modules_loader! {
     Modules,
 
-    shell => (shell::ShellModule, ())
+    shell => (lua::LuaModule, ())
 }
