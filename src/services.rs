@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 pub mod discord;
 
-use crate::{bot::Bot, config::ConfigServices};
+use crate::{bot::Bot, config::ConfigServices, message::ToMessageContent};
 
 macro_rules! services {
     ($services_struct:ident, $($service_ident:ident => ($service_module_ident:ident, $service:ty)),*) => {
@@ -67,6 +67,8 @@ pub trait Service: 'static + Sized + Send + Sync {
 
     async fn init(bot: Arc<Bot>, config: Self::ServiceConfig) -> Result<Arc<Self>>;
     async fn unload(&self) -> Result<()>;
+
+    async fn current_user(self: &Arc<Self>) -> Result<Arc<Self::User>>;
 }
 
 bitflags! {
@@ -102,6 +104,9 @@ pub trait User<S: Service>: Send + Sync {
 pub trait Channel<S: Service>: Send + Sync {
     fn id(&self) -> ChannelId;
     fn name(&self) -> String;
+    async fn send<'a, C>(&self, content: C) -> Result<()>
+    where
+        C: ToMessageContent<'a>;
     async fn server(&self) -> Result<Arc<S::Server>>;
     fn service(&self) -> &Arc<S>;
 }

@@ -116,6 +116,13 @@ impl Service for DiscordService {
     async fn unload(&self) -> Result<()> {
         Ok(())
     }
+
+    async fn current_user(self: &Arc<DiscordService>) -> Result<Arc<user::DiscordUser>> {
+        Ok(Arc::new(user::DiscordUser::new(
+            self.cache_and_http().cache.current_user().await.into(),
+            self.clone(),
+        )))
+    }
 }
 
 impl DiscordService {

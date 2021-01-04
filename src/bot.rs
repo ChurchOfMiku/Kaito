@@ -1,6 +1,9 @@
 use anyhow::Result;
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use crate::{
     modules::Modules,
@@ -9,6 +12,7 @@ use crate::{
 
 pub struct Bot {
     ctx: RwLock<Option<Arc<BotContext>>>,
+    root_path: PathBuf,
 }
 
 macro_rules! get_ctx {
@@ -21,10 +25,15 @@ macro_rules! get_ctx {
 }
 
 impl Bot {
-    pub async fn init() -> Result<Arc<Bot>> {
+    pub async fn init(root_path: PathBuf) -> Result<Arc<Bot>> {
         Ok(Arc::new(Bot {
             ctx: RwLock::new(None),
+            root_path,
         }))
+    }
+
+    pub fn root_path(&self) -> &Path {
+        &self.root_path
     }
 
     pub fn set_ctx(&self, ctx: Arc<BotContext>) {
