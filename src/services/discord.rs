@@ -1,11 +1,11 @@
 use anyhow::Result;
+use arc_swap::ArcSwapOption;
 use futures::future::{AbortHandle, Abortable};
 use parking_lot::Mutex;
 use serenity::{
-    cache::Cache,
-    http::client::Http,
     model::{channel::Message, gateway::Ready},
     prelude::*,
+    CacheAndHttp,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -20,8 +20,7 @@ use crate::bot::Bot;
 
 pub struct DiscordService {
     bot: Arc<Bot>,
-    cache: Arc<Cache>,
-    http: Arc<Http>,
+    cache_and_http: ArcSwapOption<CacheAndHttp>,
     ready_abort: Mutex<Option<AbortHandle>>,
 }
 
@@ -83,8 +82,7 @@ impl Service for DiscordService {
     async fn init(bot: Arc<Bot>, config: Self::ServiceConfig) -> Result<Arc<Self>> {
         let service = Arc::new(DiscordService {
             bot,
-            cache: unsafe { Arc::from_raw(std::ptr::null()) },
-            http: unsafe { Arc::from_raw(std::ptr::null()) },
+            cache_and_http: ArcSwapOption::new(None),
             ready_abort: Default::default(),
         });
 
@@ -92,17 +90,9 @@ impl Service for DiscordService {
             .event_handler(SerenityHandler::new(service.clone()))
             .await?;
 
-        // No events is run before the client is started, therefore this is safe?
-        unsafe {
-            std::ptr::write_unaligned(
-                &service.cache as *const _ as *mut _,
-                client.cache_and_http.cache.clone(),
-            );
-            std::ptr::write_unaligned(
-                &service.http as *const _ as *mut _,
-                client.cache_and_http.http.clone(),
-            );
-        }
+        service
+            .cache_and_http
+            .store(Some(client.cache_and_http.clone()));
 
         async fn wrap_client(mut client: Client) -> Result<()> {
             client.start().await?;
@@ -125,6 +115,12 @@ impl Service for DiscordService {
     }
     async fn unload(&self) -> Result<()> {
         Ok(())
+    }
+}
+
+impl DiscordService {
+    fn cache_and_http(&self) -> Arc<CacheAndHttp> {
+        self.cache_and_http.load_full().unwrap()
     }
 }
 

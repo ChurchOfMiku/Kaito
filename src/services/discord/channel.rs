@@ -38,7 +38,8 @@ impl Channel<DiscordService> for DiscordChannel {
             _ => return Err(DiscordError::NoChannelGuild.into()),
         };
 
-        if let Some(guild) = self.service.cache.guild(guild_id).await {
+        let cache_and_http = self.service().cache_and_http();
+        if let Some(guild) = cache_and_http.cache.guild(guild_id).await {
             return Ok(Arc::new(DiscordServer::new(guild, self.service.clone())));
         }
 
