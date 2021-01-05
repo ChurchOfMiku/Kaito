@@ -37,5 +37,8 @@ async fn main() {
         println!("Error: {}", err.to_string());
     }
 
-    loop {}
+    loop {
+        tokio::task::yield_now().await;
+        std::thread::yield_now();
+    }
 }

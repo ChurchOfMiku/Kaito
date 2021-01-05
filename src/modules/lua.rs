@@ -1,5 +1,6 @@
 use anyhow::Result;
 use async_mutex::{Mutex, MutexGuardArc};
+use crossbeam::channel::TryRecvError;
 use std::{sync::Arc, time::Duration};
 
 mod lib;
@@ -12,11 +13,12 @@ use crate::{
     services::{Channel, ChannelId, Message, Server, ServerId, Service, User},
     settings::prelude::*,
 };
-use state::LuaState;
+use state::{LuaState, SandboxMsg, SandboxTerminationReason};
 
 pub struct LuaModule {
     settings: Arc<LuaModuleSettings>,
-    state: Arc<Mutex<LuaState>>,
+    bot_state: Arc<Mutex<LuaState>>,
+    sandbox_state: Arc<Mutex<LuaState>>,
 }
 
 settings! {
@@ -40,13 +42,16 @@ impl Module for LuaModule {
     async fn load(bot: Arc<Bot>, _config: ()) -> Result<Arc<Self>> {
         Ok(Arc::new(LuaModule {
             settings: LuaModuleSettings::create()?,
-            state: Arc::new(Mutex::new(LuaState::create_state(&bot)?)),
+            bot_state: Arc::new(Mutex::new(LuaState::create_state(&bot, false)?)),
+            sandbox_state: Arc::new(Mutex::new(LuaState::create_state(&bot, true)?)),
         }))
     }
 
     async fn message(&self, msg: Arc<dyn Message<impl Service>>) -> Result<()> {
         // Ignore the bot
-        if msg.author().id() == msg.service().current_user().await?.id() {
+        if msg.author().id() == msg.service().current_user().await?.id()
+            || msg.author().bot() == Some(true)
+        {
             return Ok(());
         }
 
@@ -103,25 +108,57 @@ impl LuaModule {
     async fn eval_sandbox(
         &self,
         msg: Arc<dyn Message<impl Service>>,
-        _errors: bool,
+        errors: bool,
         code: String,
     ) -> Result<()> {
-        let lua_state = self.get_state().await?;
+        let lua_state = self.get_sandbox_state().await?;
 
-        let mut recv = lua_state.run_sandboxed(&code)?;
+        let recv = match lua_state.run_sandboxed(&code) {
+            Ok(recv) => recv,
+            Err(_err) => {
+                return Ok(());
+            }
+        };
 
-        while let Ok(out) = recv.try_next() {
-            if let Some(out) = out {
-                msg.channel().await?.send(out).await?;
-            } else {
-                tokio::time::delay_for(Duration::from_millis(100)).await;
+        drop(lua_state);
+
+        loop {
+            match recv.try_recv() {
+                Ok(out) => match out {
+                    SandboxMsg::Out(out) => {
+                        if !out.is_empty() {
+                            msg.channel().await?.send(out).await?;
+                        }
+                    }
+                    SandboxMsg::Error(err) => {
+                        if errors && !err.is_empty() {
+                            msg.channel().await?.send(err).await?;
+                        }
+                    }
+                    SandboxMsg::Terminated(reason) => {
+                        match reason {
+                            SandboxTerminationReason::ExecutionQuota => {
+                                msg.channel()
+                                    .await?
+                                    .send("Execution quota exceeded, terminated execution")
+                                    .await?;
+                            }
+                            SandboxTerminationReason::Ended => {}
+                        }
+                        break;
+                    }
+                },
+                Err(TryRecvError::Empty) => {
+                    tokio::time::delay_for(Duration::from_millis(50)).await;
+                }
+                Err(TryRecvError::Disconnected) => break,
             }
         }
 
         Ok(())
     }
 
-    pub async fn get_state(&self) -> Result<MutexGuardArc<LuaState>> {
-        Ok(self.state.lock_arc().await)
+    pub async fn get_sandbox_state(&self) -> Result<MutexGuardArc<LuaState>> {
+        Ok(self.sandbox_state.lock_arc().await)
     }
 }

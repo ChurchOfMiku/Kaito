@@ -7,7 +7,7 @@ local HOOK_EVERY_INSTRUCTION = 1024
 
 local function result_to_string(res)
     if type(res) == "table" then
-
+        return sandbox.utils.table_to_string(res)
     else
         return tostring(res)
     end
@@ -55,6 +55,10 @@ end
 sandbox.run = function(state, source)
     -- Get fenv
     local fenv = sandbox.env.get_env()
+    fenv.print = function(...)
+        state:print(results_to_string({...}))
+    end
+
     local instructions_run = 0
     local max_instructions = HOOK_EVERY_INSTRUCTION * 2
 
@@ -62,6 +66,12 @@ sandbox.run = function(state, source)
 
     if not fn then
         fn = load("return " .. source, "", "t", fenv)
+    end
+
+    if not fn then
+        state:error(err)
+        state:terminate("")
+        return
     end
 
     -- Set the function env
@@ -75,7 +85,8 @@ sandbox.run = function(state, source)
         function()
             instructions_run = instructions_run + HOOK_EVERY_INSTRUCTION
             if instructions_run >= max_instructions then
-                error("Quota exceeded, terminated execution")
+                state:terminate("exec")
+                error("Execution quota exceeded")
             end
         end,
         "",
@@ -95,7 +106,11 @@ sandbox.run = function(state, source)
             res = {table.unpack(ret, 3, #ret)}
 
             state:print(results_to_string(res))
+        else
+            state:error(err)
         end
+
+        state:terminate("")
     else
         -- TODO: add it to the pool
     end
