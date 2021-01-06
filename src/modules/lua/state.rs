@@ -8,6 +8,7 @@ use crate::bot::Bot;
 
 pub struct LuaState {
     inner: Lua,
+    sandbox: bool,
 }
 
 impl LuaState {
@@ -39,7 +40,7 @@ impl LuaState {
         // Limit memory to 256 MiB
         inner.set_memory_limit(256 * 1024 * 1024)?;
 
-        Ok(LuaState { inner })
+        Ok(LuaState { inner, sandbox })
     }
 
     pub fn run_sandboxed(&self, source: &str) -> Result<Receiver<SandboxMsg>> {
@@ -51,6 +52,20 @@ impl LuaState {
         run_fn.call((SandboxState { sender }, source))?;
 
         Ok(receiver)
+    }
+
+    pub fn think(&self) -> Result<()> {
+        if self.sandbox {
+            let sandbox_tbl: Table = self.inner.globals().get("sandbox")?;
+            let think_fn: Function = sandbox_tbl.get("think")?;
+            think_fn.call(())?;
+        } else {
+            let bot_tbl: Table = self.inner.globals().get("bot")?;
+            let think_fn: Function = bot_tbl.get("think")?;
+            think_fn.call(())?;
+        }
+
+        Ok(())
     }
 }
 

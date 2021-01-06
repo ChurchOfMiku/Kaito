@@ -40,10 +40,25 @@ impl Module for LuaModule {
     type ModuleSettings = LuaModuleSettings;
 
     async fn load(bot: Arc<Bot>, _config: ()) -> Result<Arc<Self>> {
+        let bot_state = Arc::new(Mutex::new(LuaState::create_state(&bot, false)?));
+        let sandbox_state = Arc::new(Mutex::new(LuaState::create_state(&bot, true)?));
+
+        let bot_state2 = bot_state.clone();
+        let sandbox_state2 = sandbox_state.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(50));
+
+            loop {
+                interval.tick().await;
+                bot_state2.lock_arc().await.think().ok();
+                sandbox_state2.lock_arc().await.think().ok();
+            }
+        });
+
         Ok(Arc::new(LuaModule {
             settings: LuaModuleSettings::create()?,
-            bot_state: Arc::new(Mutex::new(LuaState::create_state(&bot, false)?)),
-            sandbox_state: Arc::new(Mutex::new(LuaState::create_state(&bot, true)?)),
+            bot_state,
+            sandbox_state,
         }))
     }
 

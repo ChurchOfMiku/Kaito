@@ -1,6 +1,8 @@
 sandbox.utils = sandbox.utils or {}
 
 sandbox.utils.deepcopy = function(orig)
+    local deepcopy = sandbox.utils.deepcopy
+
     local orig_type = type(orig)
     local copy
     if orig_type == "table" then

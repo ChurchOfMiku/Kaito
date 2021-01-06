@@ -1,78 +1,13 @@
-sandbox = sandbox or {}
+sandbox = sandbox or {tasks = {}}
 
-include("./sandbox/env.lua")
 include("./sandbox/utils.lua")
+include("./sandbox/env.lua")
 
 local HOOK_EVERY_INSTRUCTION = 1024
 
-local function result_to_string(res)
-    if type(res) == "table" then
-        return sandbox.utils.table_to_string(res)
-    else
-        return tostring(res)
-    end
-end
-
-local function results_to_string(res)
-    local len = #res
-
-    if len == 0 then
-        return ""
-    elseif len == 1 then
-        return result_to_string(res[1])
-    else
-        local results = {}
-        local max = 0
-        local has_newline = false
-
-        for _, v in pairs(res) do
-            local t = result_to_string(v)
-            has_newline = has_newline or string.find(t, "\n")
-            max = math.max(max, #t)
-            table.insert(results, t)
-        end
-
-        local print_newlines = has_newline or max > 16
-
-        local out = ""
-
-        for k, v in pairs(res) do
-            out = out .. v
-
-            if k ~= len then
-                out = out .. ","
-
-                if print_newlines then
-                    out = out .. "\n"
-                end
-            end
-        end
-
-        return out
-    end
-end
-
-sandbox.run = function(state, source)
-    -- Get fenv
-    local fenv = sandbox.env.get_env()
-    fenv.print = function(...)
-        state:print(results_to_string({...}))
-    end
-
+sandbox.exec = function(state, fenv, fn)
     local instructions_run = 0
-    local max_instructions = HOOK_EVERY_INSTRUCTION * 2
-
-    local fn, err = load(source, "", "t", fenv)
-
-    if not fn then
-        fn = load("return " .. source, "", "t", fenv)
-    end
-
-    if not fn then
-        state:error(err)
-        state:terminate("")
-        return
-    end
+    local max_instructions = HOOK_EVERY_INSTRUCTION * 4
 
     -- Set the function env
     sandbox.utils.setfenv(fn, fenv)
@@ -93,6 +28,10 @@ sandbox.run = function(state, source)
         HOOK_EVERY_INSTRUCTION
     )
 
+    return sandbox.run_coroutine(thread)
+end
+
+sandbox.run_coroutine = function(thread)
     -- Execute the first coroutine resume
     local ret = {pcall(coroutine.resume, thread)}
 
@@ -105,13 +44,84 @@ sandbox.run = function(state, source)
         if succ then
             res = {table.unpack(ret, 3, #ret)}
 
-            state:print(results_to_string(res))
+            return true, nil, res
         else
-            state:error(err)
+            return false, nil, err
+        end
+    else
+        return true, thread, nil
+    end
+end
+
+local function update_env(fenv, state)
+    fenv.print = function(...)
+        local out = ""
+        local tbl = {...}
+
+        for k, v in pairs(tbl) do
+            out = out .. tostring(v)
+
+            if next(tbl, k) ~= nil then
+                out = out .. ", "
+            end
         end
 
+        state:print(out)
+    end
+    sandbox.utils.setfenv(fenv.print, fenv)
+    fenv.PrintTable = function(tbl)
+        state:print(sandbox.utils.table_to_string(tbl))
+    end
+
+    return fenv
+end
+
+sandbox.run = function(state, source)
+    local fenv = update_env(sandbox.env.get_env(), state)
+
+    local fn, err = load("print(" .. source .. ")", "", "t", fenv)
+
+    if not fn then
+        fn = load(source, "", "t", fenv)
+    end
+
+    if not fn then
+        state:error(err)
         state:terminate("")
+        return
+    end
+
+    local succ, thread, res = sandbox.exec(state, fenv, fn)
+
+    if succ then
+        -- Update the env
+        sandbox.env.env = fenv
+
+        if thread then
+            local task_fn = function()
+            end
+
+            sandbox.tasks[task_fn] = task_fn
+        else
+            -- Succ!
+            state:terminate("")
+        end
     else
-        -- TODO: add it to the pool
+        local fn = function()
+            state:error(tostring(res))
+        end
+
+        sandbox.utils.setfenv(fn, fenv)
+
+        fn()
+        state:terminate("")
+    end
+end
+
+sandbox.think = function()
+    for k,v in pairs(sandbox.tasks) do
+        if v() then
+            sandbox.tasks[k] = nil
+        end
     end
 end
