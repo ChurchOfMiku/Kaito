@@ -5,6 +5,7 @@ sandbox.env.base_env = {
     os = {
         clock = os.clock
     },
+    async = sandbox.utils.deepcopy(async),
     math = sandbox.utils.deepcopy(math),
     string = sandbox.utils.deepcopy(string),
     table = sandbox.utils.deepcopy(table),
@@ -16,6 +17,7 @@ sandbox.env.base_env = {
     ipairs = ipairs,
     next = next,
     -- other
+    error = error,
     tostring = tostring,
     tonumber = tonumber,
     type = type

@@ -1,12 +1,14 @@
 sandbox = sandbox or {tasks = {}}
 
+include("./lib/async.lua")
+
 include("./sandbox/utils.lua")
 include("./sandbox/env.lua")
 
 local HOOK_EVERY_INSTRUCTION = 1024
 
 sandbox.exec = function(state, fenv, fn)
-    local instructions_run = 0
+    local instructions_run = state:get_instructions_run()
     local max_instructions = HOOK_EVERY_INSTRUCTION * 4
 
     -- Set the function env
@@ -19,6 +21,7 @@ sandbox.exec = function(state, fenv, fn)
         thread,
         function()
             instructions_run = instructions_run + HOOK_EVERY_INSTRUCTION
+            state:set_instructions_run(instructions_run)
             if instructions_run >= max_instructions then
                 state:terminate("exec")
                 error("Execution quota exceeded")
@@ -76,19 +79,35 @@ local function update_env(fenv, state)
     return fenv
 end
 
+sandbox.async_callback = function(state, future, success, ...)
+    local args = {...}
+    sandbox.run(state, function()
+        if success then
+            future:__handle_resolve(true, table.unpack(args))
+        else
+            future:__handle_reject(true, table.unpack(args))
+        end
+    end)
+end
+
 sandbox.run = function(state, source)
     local fenv = update_env(sandbox.env.get_env(), state)
 
-    local fn, err = load("print(" .. source .. ")", "", "t", fenv)
+    local fn, err
 
-    if not fn then
-        fn = load(source, "", "t", fenv)
-    end
+    if type(source) == "function" then
+        fn = source
+    else
+        fn, err = load("print(" .. source .. ")", "", "t", fenv)
 
-    if not fn then
-        state:error(err)
-        state:terminate("")
-        return
+        if not fn then
+            fn = load(source, "", "t", fenv)
+        end
+    
+        if not fn then
+            state:error(err)
+            return
+        end
     end
 
     local succ, thread, res = sandbox.exec(state, fenv, fn)
@@ -99,29 +118,42 @@ sandbox.run = function(state, source)
 
         if thread then
             local task_fn = function()
+                local fenv = sandbox.env.env
+                local succ, _, res = sandbox.run_coroutine(thread)
+
+                if not succ then
+                    state:error(res)
+                    return true
+                end
+
+                if coroutine.status(thread) == "dead" then
+                    return true
+                end
             end
 
             sandbox.tasks[task_fn] = task_fn
-        else
-            -- Succ!
-            state:terminate("")
         end
     else
         local fn = function()
-            state:error(tostring(res))
+            state:error(res)
         end
 
         sandbox.utils.setfenv(fn, fenv)
 
         fn()
-        state:terminate("")
     end
 end
 
 sandbox.think = function()
+    local remove = {}
+
     for k,v in pairs(sandbox.tasks) do
         if v() then
-            sandbox.tasks[k] = nil
+            table.insert(remove, k)
         end
+    end
+
+    for _, k in pairs(remove) do
+        sandbox.tasks[k] = nil
     end
 end

@@ -39,14 +39,22 @@ pub fn include_lua<'a>(
         let paths = glob::glob(pattern.as_ref())?;
 
         for path in paths {
-            let source = read_to_string(path?)?;
-            state.load(&source).eval()?;
+            let path = path?;
+            let source = read_to_string(&path)?;
+            state
+                .load(&source)
+                .set_name(path.as_os_str().to_string_lossy().as_bytes())?
+                .eval()?;
         }
     } else {
+        let lua_path = path.clone();
         let path = root_path.join(path);
 
         let source = read_to_string(path)?;
-        let result = state.load(&source).eval()?;
+        let result = state
+            .load(&source)
+            .set_name(lua_path.as_os_str().to_string_lossy().as_bytes())?
+            .eval()?;
 
         return Ok(Some(result));
     }
@@ -54,6 +62,7 @@ pub fn include_lua<'a>(
     Ok(None)
 }
 
+pub mod r#async;
 pub mod os;
 
 pub fn lib_include(root_path: PathBuf, state: &Lua) -> Result<()> {

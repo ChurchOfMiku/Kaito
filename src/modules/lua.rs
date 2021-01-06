@@ -50,8 +50,12 @@ impl Module for LuaModule {
 
             loop {
                 interval.tick().await;
-                bot_state2.lock_arc().await.think().ok();
-                sandbox_state2.lock_arc().await.think().ok();
+                if let Err(err) = bot_state2.lock_arc().await.think() {
+                    println!("error: {}", err.to_string());
+                }
+                if let Err(err) = sandbox_state2.lock_arc().await.think() {
+                    println!("error: {}", err.to_string());
+                }
             }
         });
 

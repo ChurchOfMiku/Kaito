@@ -3,17 +3,25 @@ sandbox.utils = sandbox.utils or {}
 sandbox.utils.deepcopy = function(orig)
     local deepcopy = sandbox.utils.deepcopy
 
+    -- http://lua-users.org/wiki/CopyTable
+    copies = copies or {}
     local orig_type = type(orig)
     local copy
     if orig_type == "table" then
-        copy = {}
-        for orig_key, orig_value in next, orig, nil do
-            copy[deepcopy(orig_key)] = deepcopy(orig_value)
+        if copies[orig] then
+            copy = copies[orig]
+        else
+            copy = {}
+            copies[orig] = copy
+            for orig_key, orig_value in next, orig, nil do
+                copy[deepcopy(orig_key, copies)] = deepcopy(orig_value, copies)
+            end
+            setmetatable(copy, deepcopy(getmetatable(orig), copies))
         end
-        setmetatable(copy, deepcopy(getmetatable(orig)))
-    else
+    else -- number, string, boolean, etc
         copy = orig
     end
+
     return copy
 end
 
@@ -63,8 +71,11 @@ sandbox.utils.is_array = function(tbl)
     return true
 end
 
-sandbox.utils.table_to_string = function(tbl, indent, key)
+sandbox.utils.table_to_string = function(tbl, indent, key, tbls)
     indent = indent or 0
+    tbls = tbls or {}
+
+    tbls[tbl] = true
 
     local len = 0
     local left_pad = string.rep(" ", indent)
@@ -107,7 +118,11 @@ sandbox.utils.table_to_string = function(tbl, indent, key)
 
     for k,v in pairs(tbl) do
         if type(v) == "table" then
-            out = out .. sandbox.utils.table_to_string(v, indent + 2, k)
+            if tbls[v] then
+                out = out .. left_pad2 .. (is_array and "" or k .. " = ") .. tostring(v)
+            else
+                out = out .. sandbox.utils.table_to_string(v, indent + 2, k, tbls)
+            end
         else
             out = out .. left_pad2 .. (is_array and "" or k .. " = ") .. tostring(v)
         end
