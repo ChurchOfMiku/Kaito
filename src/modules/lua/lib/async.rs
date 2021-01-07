@@ -4,11 +4,12 @@ use mlua::{
     prelude::{LuaError, LuaMultiValue},
     Function, Lua, RegistryKey, Table,
 };
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
+use thiserror::Error;
 
-use super::super::state::{LuaAsyncCallback, SandboxState};
+use super::super::state::LuaAsyncCallback;
 
-fn create_future(state: &Lua) -> Result<(RegistryKey, Table)> {
+pub fn create_future(state: &Lua) -> Result<(RegistryKey, Table)> {
     let async_tbl: Table = state.globals().get("async")?;
     let fut_fn: Function = async_tbl.get("__RustFuture")?;
 
@@ -22,7 +23,11 @@ macro_rules! wrap_future {
     ($state:expr, $fut:expr) => {
         match $fut {
             Ok(a) => a,
-            Err(err) => return Err(LuaError::RuntimeError(err.to_string())),
+            Err(err) => {
+                return Err(LuaError::ExternalError(Arc::new(
+                    $crate::modules::lua::lib::r#async::AsyncError::FutureError(err.to_string()),
+                )))
+            }
         }
     };
 }
@@ -35,7 +40,9 @@ pub fn lib_async(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
         let (future_reg_key, fut) = wrap_future!(state, create_future(state));
 
         if duration.is_sign_negative() || !duration.is_finite() {
-            return Err(LuaError::RuntimeError("Invalid duration".into()));
+            return Err(LuaError::ExternalError(Arc::new(
+                AsyncError::InvalidDuration,
+            )));
         }
 
         let duration = Duration::from_secs_f64(duration);
@@ -50,7 +57,7 @@ pub fn lib_async(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
                 .send((
                     future_reg_key,
                     sandbox_state,
-                    Box::new(|_state| LuaMultiValue::new()),
+                    Box::new(|_state| Ok(LuaMultiValue::new())),
                 ))
                 .unwrap();
         });
@@ -62,4 +69,12 @@ pub fn lib_async(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
     state.globals().set("async", async_tbl)?;
 
     Ok(())
+}
+
+#[derive(Debug, Error)]
+pub enum AsyncError {
+    #[error("invalid duration")]
+    InvalidDuration,
+    #[error("{}", _0)]
+    FutureError(String),
 }

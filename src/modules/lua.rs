@@ -3,7 +3,9 @@ use async_mutex::{Mutex, MutexGuardArc};
 use crossbeam::channel::TryRecvError;
 use std::{sync::Arc, time::Duration};
 
+#[macro_use]
 mod lib;
+mod http;
 mod state;
 mod utils;
 
@@ -151,7 +153,7 @@ impl LuaModule {
                     }
                     SandboxMsg::Error(err) => {
                         if errors && !err.is_empty() {
-                            msg.channel().await?.send(err).await?;
+                            msg.channel().await?.send(format!("error: {}", err)).await?;
                         }
                     }
                     SandboxMsg::Terminated(reason) => {
@@ -162,7 +164,6 @@ impl LuaModule {
                                     .send("Execution quota exceeded, terminated execution")
                                     .await?;
                             }
-                            SandboxTerminationReason::Ended => {}
                         }
                         break;
                     }

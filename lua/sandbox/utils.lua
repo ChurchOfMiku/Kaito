@@ -117,12 +117,15 @@ sandbox.utils.table_to_string = function(tbl, indent, key, tbls)
     local out = left_pad .. (key and (key .. " = ") or "") .. "{" .. (newlines and "\n" or " ")
 
     for k,v in pairs(tbl) do
-        if type(v) == "table" then
+        local t = type(v)
+        if t == "table" then
             if tbls[v] then
                 out = out .. left_pad2 .. (is_array and "" or k .. " = ") .. tostring(v)
             else
                 out = out .. sandbox.utils.table_to_string(v, indent + 2, k, tbls)
             end
+        elseif t == "string" then
+            out = out .. left_pad2 .. (is_array and "" or k .. " = \"") .. tostring(v) .. "\""
         else
             out = out .. left_pad2 .. (is_array and "" or k .. " = ") .. tostring(v)
         end

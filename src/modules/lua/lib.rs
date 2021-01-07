@@ -62,6 +62,7 @@ pub fn include_lua<'a>(
     Ok(None)
 }
 
+#[macro_use]
 pub mod r#async;
 pub mod os;
 

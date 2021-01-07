@@ -1,5 +1,10 @@
 use anyhow::Result;
 use crossbeam::channel::{unbounded, Receiver, Sender};
+use governor::{
+    clock::QuantaClock,
+    state::{direct::NotKeyed, InMemoryState},
+    Quota, RateLimiter,
+};
 use mlua::{
     prelude::{LuaError, LuaMultiValue, LuaValue},
     Function, Lua, RegistryKey, StdLib, Table, ToLua, UserData, UserDataMethods,
@@ -9,19 +14,24 @@ use std::sync::{
     Arc,
 };
 
-use super::lib::{include_lua, lib_include, os::lib_os, r#async::lib_async};
+use super::{
+    http,
+    lib::{include_lua, lib_include, os::lib_os, r#async::lib_async},
+};
 use crate::bot::Bot;
 
 pub type LuaAsyncCallback = (
     RegistryKey,
     Option<SandboxState>,
-    Box<dyn Fn(&Lua) -> LuaMultiValue + Send + Sync>,
+    Box<dyn Fn(&Lua) -> Result<LuaMultiValue, String> + Send>,
 );
 
 pub struct LuaState {
     inner: Lua,
     sandbox: bool,
+    async_sender: Sender<LuaAsyncCallback>,
     async_receiver: Receiver<LuaAsyncCallback>,
+    http_rate_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, QuantaClock>>,
 }
 
 impl LuaState {
@@ -38,9 +48,9 @@ impl LuaState {
             )
         };
 
-        let (sender, async_receiver) = unbounded();
+        let (async_sender, async_receiver) = unbounded();
 
-        lib_async(&inner, sender)?;
+        lib_async(&inner, async_sender.clone())?;
         lib_os(&inner)?;
 
         let lua_root_path = bot.root_path().join("lua");
@@ -56,10 +66,16 @@ impl LuaState {
         // Limit memory to 256 MiB
         inner.set_memory_limit(256 * 1024 * 1024)?;
 
+        let http_rate_limiter = Arc::new(RateLimiter::direct(Quota::per_second(
+            std::num::NonZeroU32::new(2).unwrap(),
+        )));
+
         Ok(LuaState {
             inner,
             sandbox,
+            async_sender,
             async_receiver,
+            http_rate_limiter,
         })
     }
 
@@ -70,8 +86,15 @@ impl LuaState {
         let (sender, receiver) = unbounded();
 
         let sandbox_state = SandboxState(Arc::new(SandboxStateInner {
+            async_sender: self.async_sender.clone(),
             sender: sender.clone(),
             instructions_run: AtomicU64::new(0),
+            limits: SandboxLimits {
+                lines_left: AtomicU64::new(10),
+                characters_left: AtomicU64::new(1000),
+                http_calls_left: AtomicU64::new(2),
+            },
+            http_rate_limiter: self.http_rate_limiter.clone(),
         }));
 
         self.inner
@@ -94,15 +117,26 @@ impl LuaState {
         }
 
         loop {
+            // Check for async callbacks
             match self.async_receiver.try_recv() {
                 Ok((fut_reg_key, sandbox_state, cb)) => {
-                    let value = cb(&self.inner);
+                    let (succ, value) = match cb(&self.inner) {
+                        Ok(vals) => (true, vals),
+                        Err(err) => (
+                            false,
+                            LuaMultiValue::from_vec(vec![LuaValue::String(
+                                self.inner.create_string(&err)?,
+                            )]),
+                        ),
+                    };
                     let future: Table = self.inner.registry_value(&fut_reg_key)?;
+                    let resolve_fn: Function = if succ {
+                        future.get("__handle_resolve")?
+                    } else {
+                        future.get("__handle_reject")?
+                    };
 
-                    let resolve_fn: Function = future.get("__handle_resolve")?;
-
-                    let succ = true;
-
+                    // Sandbox when resolving the future
                     if self.sandbox {
                         if let Some(sandbox_state) = sandbox_state {
                             let sandbox_tbl: Table = self.inner.globals().get("sandbox")?;
@@ -114,7 +148,6 @@ impl LuaState {
                                         sandbox_state.to_lua(&self.inner)?,
                                         LuaValue::Table(future.clone()),
                                         LuaValue::Boolean(true),
-                                        LuaValue::Boolean(succ),
                                     ],
                                     value.into_vec(),
                                 ]
@@ -126,11 +159,7 @@ impl LuaState {
                     } else {
                         let args = LuaMultiValue::from_vec(
                             [
-                                vec![
-                                    LuaValue::Table(future.clone()),
-                                    LuaValue::Boolean(true),
-                                    LuaValue::Boolean(succ),
-                                ],
+                                vec![LuaValue::Table(future.clone()), LuaValue::Boolean(true)],
                                 value.into_vec(),
                             ]
                             .concat(),
@@ -158,15 +187,23 @@ pub enum SandboxMsg {
 
 pub enum SandboxTerminationReason {
     ExecutionQuota,
-    Ended,
 }
 
 #[derive(Clone)]
-pub struct SandboxState(Arc<SandboxStateInner>);
+pub struct SandboxState(pub Arc<SandboxStateInner>);
 
 pub struct SandboxStateInner {
-    sender: Sender<SandboxMsg>,
-    instructions_run: AtomicU64,
+    pub async_sender: Sender<LuaAsyncCallback>,
+    pub sender: Sender<SandboxMsg>,
+    pub instructions_run: AtomicU64,
+    pub limits: SandboxLimits,
+    pub http_rate_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, QuantaClock>>,
+}
+
+pub struct SandboxLimits {
+    pub lines_left: AtomicU64,
+    pub characters_left: AtomicU64,
+    pub http_calls_left: AtomicU64,
 }
 
 impl UserData for SandboxState {
@@ -190,10 +227,21 @@ impl UserData for SandboxState {
             Ok(this.0.instructions_run.load(Ordering::Relaxed))
         });
 
+        methods.add_method("set_state", |state, this, _: ()| {
+            state.set_named_registry_value("__SANDBOX_STATE", this.clone())?;
+            Ok(())
+        });
+
+        methods.add_method(
+            "http_fetch",
+            |state, this, (url, options): (String, Table)| {
+                http::http_fetch(state, this, &url, options)
+            },
+        );
+
         methods.add_method("terminate", |_, this, value: String| {
             let reason = match value.as_ref() {
                 "exec" => SandboxTerminationReason::ExecutionQuota,
-                "" => SandboxTerminationReason::Ended,
                 _ => {
                     return Err(LuaError::RuntimeError(format!(
                         "unknown termination reason: \"{}\"",

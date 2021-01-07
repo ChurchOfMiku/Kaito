@@ -46,11 +46,11 @@ function async.FutureMeta:await()
 
         local res = self.results
 
-        if res then
-            if res[1] then
-                return table.unpack(res, 2, #res)
+        if self.state ~= async.FUTURE_STATE.Pending and self.state ~= async.FUTURE_STATE.Executing then
+            if self.state == async.FUTURE_STATE.Resolved then
+                return table.unpack(res, 1, #res)
             else
-                error(res[2])
+                error(res[1])
             end
         end
     end
@@ -75,9 +75,9 @@ function async.FutureMeta:__handle_resolve(force, ...)
                 if res[1] and res[1].__type and res[1]:__type() == "future" then
                     local cur_fut = self
 
-                    res[1]:Then(function(...)
+                    res[1]:thence(function(...)
                         cur_fut:__handle_resolve(true, ...)
-                    end):Catch(function(...)
+                    end):catch(function(...)
                         cur_fut:__handle_reject(true, ...)
                     end)()
 
@@ -158,7 +158,7 @@ function async.__RustFuture()
     return future
 end
 
-function async.Future(future_fn)
+function async.future(future_fn)
     assert(type(future_fn) == "function")
 
     local future = setmetatable({
@@ -167,13 +167,12 @@ function async.Future(future_fn)
         callbacks = {}
     }, async.FutureMeta)
 
-
     table.insert(next_tick_cbs, future)
 
     return future
 end
 
-function async.Poll()
+function async.poll()
     for k,v in pairs(next_tick_cbs) do
         v()
         next_tick_cbs[k] = nil

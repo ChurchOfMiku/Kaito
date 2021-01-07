@@ -9,7 +9,7 @@ local HOOK_EVERY_INSTRUCTION = 1024
 
 sandbox.exec = function(state, fenv, fn)
     local instructions_run = state:get_instructions_run()
-    local max_instructions = HOOK_EVERY_INSTRUCTION * 4
+    local max_instructions = HOOK_EVERY_INSTRUCTION * 8
 
     -- Set the function env
     sandbox.utils.setfenv(fn, fenv)
@@ -72,6 +72,13 @@ local function update_env(fenv, state)
         state:print(out)
     end
     sandbox.utils.setfenv(fenv.print, fenv)
+
+    fenv.http = fenv.http or {}
+    fenv.http.fetch = function(url, data)
+        return state:http_fetch(url, data or {})
+    end
+    sandbox.utils.setfenv(fenv.http.fetch, fenv)
+
     fenv.PrintTable = function(tbl)
         state:print(sandbox.utils.table_to_string(tbl))
     end
@@ -118,15 +125,22 @@ sandbox.run = function(state, source)
 
         if thread then
             local task_fn = function()
-                local fenv = sandbox.env.env
-                local succ, _, res = sandbox.run_coroutine(thread)
-
-                if not succ then
-                    state:error(res)
+                if coroutine.status(thread) == "dead" then
                     return true
                 end
 
-                if coroutine.status(thread) == "dead" then
+                local fenv = sandbox.env.env
+                state:set_state() -- Get Rust to set the registry sandbox state variable
+                local succ, thread, res = sandbox.run_coroutine(thread)
+
+                if not succ then
+                    sandbox.run(state, function()
+                        state:error(tostring(res))
+                    end)
+                    return true
+                end
+
+                if not thread or coroutine.status(thread) == "dead" then
                     return true
                 end
             end
@@ -134,13 +148,9 @@ sandbox.run = function(state, source)
             sandbox.tasks[task_fn] = task_fn
         end
     else
-        local fn = function()
-            state:error(res)
-        end
-
-        sandbox.utils.setfenv(fn, fenv)
-
-        fn()
+        sandbox.run(state, function()
+            state:error(tostring(res))
+        end)
     end
 end
 
