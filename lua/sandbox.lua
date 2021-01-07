@@ -79,9 +79,11 @@ local function update_env(fenv, state)
     end
     sandbox.utils.setfenv(fenv.http.fetch, fenv)
 
-    fenv.PrintTable = function(tbl)
+    local sandbox = sandbox
+    fenv.print_table = function(tbl)
         state:print(sandbox.utils.table_to_string(tbl))
     end
+    sandbox.utils.setfenv(fenv.print_table, fenv)
 
     return fenv
 end
