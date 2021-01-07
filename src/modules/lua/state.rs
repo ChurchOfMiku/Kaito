@@ -9,6 +9,7 @@ use mlua::{
     prelude::{LuaError, LuaMultiValue, LuaValue},
     Function, Lua, RegistryKey, StdLib, Table, ToLua, UserData, UserDataMethods,
 };
+use paste::paste;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
@@ -25,6 +26,20 @@ pub type LuaAsyncCallback = (
     Option<SandboxState>,
     Box<dyn Fn(&Lua) -> Result<LuaMultiValue, String> + Send>,
 );
+
+macro_rules! atomic_get_set {
+    ($ident:ident, $ty:ty) => {
+        paste! {
+            pub fn[<set_ $ident>](&self, value: $ty) {
+                self.$ident.store(value, Ordering::Relaxed)
+            }
+
+            pub fn $ident(&self) -> $ty {
+                self.$ident.load(Ordering::Relaxed)
+            }
+        }
+    };
+}
 
 pub struct LuaState {
     inner: Lua,
@@ -79,7 +94,10 @@ impl LuaState {
         })
     }
 
-    pub fn run_sandboxed(&self, source: &str) -> Result<Receiver<SandboxMsg>> {
+    pub fn run_sandboxed(
+        &self,
+        source: &str,
+    ) -> Result<(Arc<SandboxStateInner>, Receiver<SandboxMsg>)> {
         let sandbox_tbl: Table = self.inner.globals().get("sandbox")?;
         let run_fn: Function = sandbox_tbl.get("run")?;
 
@@ -91,7 +109,7 @@ impl LuaState {
             instructions_run: AtomicU64::new(0),
             limits: SandboxLimits {
                 lines_left: AtomicU64::new(10),
-                characters_left: AtomicU64::new(1000),
+                characters_left: AtomicU64::new(2000),
                 http_calls_left: AtomicU64::new(2),
             },
             http_rate_limiter: self.http_rate_limiter.clone(),
@@ -100,9 +118,9 @@ impl LuaState {
         self.inner
             .set_named_registry_value("__SANDBOX_STATE", sandbox_state.clone())?;
 
-        run_fn.call((sandbox_state, source))?;
+        run_fn.call((sandbox_state.clone(), source))?;
 
-        Ok(receiver)
+        Ok((sandbox_state.0, receiver))
     }
 
     pub fn think(&self) -> Result<()> {
@@ -204,6 +222,11 @@ pub struct SandboxLimits {
     pub lines_left: AtomicU64,
     pub characters_left: AtomicU64,
     pub http_calls_left: AtomicU64,
+}
+
+impl SandboxLimits {
+    atomic_get_set! {lines_left, u64}
+    atomic_get_set! {characters_left, u64}
 }
 
 impl UserData for SandboxState {

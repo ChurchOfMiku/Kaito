@@ -1,7 +1,10 @@
 use anyhow::Result;
 use async_mutex::{Mutex, MutexGuardArc};
 use crossbeam::channel::TryRecvError;
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 #[macro_use]
 mod lib;
@@ -14,6 +17,7 @@ use crate::{
     bot::Bot,
     services::{Channel, ChannelId, Message, Server, ServerId, Service, User},
     settings::prelude::*,
+    utils::shell_parser::parse_shell_args,
 };
 use state::{LuaState, SandboxMsg, SandboxTerminationReason};
 
@@ -122,7 +126,9 @@ impl Module for LuaModule {
 }
 
 impl LuaModule {
-    async fn on_command(&self, _msg: Arc<dyn Message<impl Service>>, _rest: String) -> Result<()> {
+    async fn on_command(&self, _msg: Arc<dyn Message<impl Service>>, rest: String) -> Result<()> {
+        let _args = parse_shell_args(&rest)?;
+
         Ok(())
     }
 
@@ -134,7 +140,7 @@ impl LuaModule {
     ) -> Result<()> {
         let lua_state = self.get_sandbox_state().await?;
 
-        let recv = match lua_state.run_sandboxed(&code) {
+        let (sandbox_state, recv) = match lua_state.run_sandboxed(&code) {
             Ok(recv) => recv,
             Err(_err) => {
                 return Ok(());
@@ -143,12 +149,27 @@ impl LuaModule {
 
         drop(lua_state);
 
-        loop {
+        let mut buffer: Vec<String> = Vec::new();
+        let mut last_msg = Instant::now();
+        let mut has_messaged = false; // only wait 100ms for the first message
+        let mut aborting = None;
+
+        while aborting.is_none() {
             match recv.try_recv() {
                 Ok(out) => match out {
                     SandboxMsg::Out(out) => {
                         if !out.is_empty() {
-                            msg.channel().await?.send(out).await?;
+                            let mut lines =
+                                out.split('\n').map(|l| l.to_string()).collect::<Vec<_>>();
+
+                            let lines_left = sandbox_state.limits.lines_left();
+
+                            if lines_left > 0 {
+                                buffer.append(&mut lines);
+                                sandbox_state.limits.set_lines_left(lines_left - 1);
+                            } else {
+                                aborting = Some("error: too many lines has been output, aborting");
+                            }
                         }
                     }
                     SandboxMsg::Error(err) => {
@@ -173,6 +194,50 @@ impl LuaModule {
                 }
                 Err(TryRecvError::Disconnected) => break,
             }
+
+            // Empty the buffer
+            if !buffer.is_empty() {
+                let elapsed = last_msg.elapsed();
+                let wait = if has_messaged {
+                    Duration::from_millis(500)
+                } else {
+                    Duration::from_millis(100)
+                };
+
+                if elapsed > wait || aborting.is_some() {
+                    let mut out = String::new();
+
+                    let mut characters_left = sandbox_state.limits.characters_left();
+
+                    let mut lines = buffer.drain(..).peekable();
+                    while let Some(line) = lines.next() {
+                        let len = line.len() as u64;
+
+                        if characters_left > len {
+                            characters_left -= len;
+                            out.push_str(&line);
+
+                            if lines.peek().is_some() {
+                                out.push_str("\n");
+                            }
+                        } else {
+                            aborting = Some("error: too many characters has been output, aborting");
+                            break;
+                        }
+                    }
+
+                    sandbox_state.limits.set_characters_left(characters_left);
+
+                    msg.channel().await?.send(out).await?;
+
+                    last_msg = Instant::now();
+                    has_messaged = true;
+                }
+            }
+        }
+
+        if let Some(aborting) = aborting {
+            msg.channel().await?.send(aborting).await?;
         }
 
         Ok(())

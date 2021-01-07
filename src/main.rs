@@ -16,6 +16,7 @@ mod config;
 mod message;
 mod modules;
 mod services;
+mod utils;
 
 async fn run() -> Result<()> {
     let config = config::load_config(&env::current_dir()?.join("config.toml"))?;
