@@ -15,7 +15,7 @@ mod utils;
 use super::{Module, ModuleKind};
 use crate::{
     bot::Bot,
-    services::{Channel, ChannelId, Message, Server, ServerId, Service, User},
+    services::{Channel, ChannelId, Message, Server, ServerId, Service, ServiceKind, User},
     settings::prelude::*,
     utils::shell_parser::parse_shell_args,
 };
@@ -215,7 +215,12 @@ impl LuaModule {
 
                         if characters_left > len {
                             characters_left -= len;
-                            out.push_str(&line);
+                            // Avoid people getting the bot to mention people
+                            if msg.service().kind() == ServiceKind::Discord {
+                                out.push_str(&line.replace('@', "@\u{200B}"));
+                            } else {
+                                out.push_str(&line);
+                            }
 
                             if lines.peek().is_some() {
                                 out.push_str("\n");

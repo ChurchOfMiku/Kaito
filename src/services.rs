@@ -69,6 +69,10 @@ pub trait Service: 'static + Sized + Send + Sync {
     async fn unload(&self) -> Result<()>;
 
     async fn current_user(self: &Arc<Self>) -> Result<Arc<Self::User>>;
+
+    fn kind(&self) -> ServiceKind {
+        Self::KIND
+    }
 }
 
 bitflags! {
