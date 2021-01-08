@@ -190,7 +190,7 @@ bot.on_command = function(msg, args)
     local succ, res = bot.parse_args(cmd, args)
 
     if not succ then
-        return msg:reply("argument error: " .. res .. '\nUse "' .. cmd_name .. ' --help", for more info.')
+        return msg:reply("argument error: " .. res .. '\nUse "' .. cmd_name .. ' --help" for more info.')
     end
 
     cmd.callback(msg, res)
