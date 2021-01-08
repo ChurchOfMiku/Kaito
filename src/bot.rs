@@ -10,6 +10,8 @@ use crate::{
     services::{Message, Service, Services},
 };
 
+pub const ROLES: &[&'static str] = &["guest", "trusted", "admin", "root"];
+
 pub struct Bot {
     ctx: RwLock<Option<Arc<BotContext>>>,
     root_path: PathBuf,

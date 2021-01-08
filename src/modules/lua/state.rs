@@ -80,7 +80,7 @@ impl LuaState {
         if sandbox {
             include_lua(&inner, &lua_root_path, "sandbox.lua")?;
         } else {
-            lib_bot(&inner)?;
+            lib_bot(&inner, bot)?;
             include_lua(&inner, &lua_root_path, "bot.lua")?;
         }
 

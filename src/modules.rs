@@ -94,5 +94,5 @@ pub enum ModuleKind {
 modules_loader! {
     Modules,
 
-    shell => (lua::LuaModule, ())
+    lua => (lua::LuaModule, ())
 }

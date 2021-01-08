@@ -3,12 +3,27 @@ use mlua::{Lua, MetaMethod, UserData, UserDataMethods};
 use std::sync::Arc;
 
 use crate::{
-    bot::Bot,
+    bot::{Bot, ROLES},
     services::{Channel, ChannelId, Message, Service},
 };
 
-pub fn lib_bot(state: &Lua) -> Result<()> {
+pub fn lib_bot(state: &Lua, bot: &Arc<Bot>) -> Result<()> {
     let bot_tbl = state.create_table()?;
+
+    let bot = bot.clone();
+    let bot_restart_sandbox_fn = state.create_function(move |_, (): ()| {
+        let ctx = bot.get_ctx();
+        tokio::spawn(async move {
+            if let Err(err) = ctx.modules().lua.module().restart_sandbox().await {
+                println!("error restarting sandbox: {}", err.to_string());
+            }
+        });
+
+        Ok(())
+    })?;
+    bot_tbl.set("restart_sandbox", bot_restart_sandbox_fn)?;
+
+    bot_tbl.set("ROLES", ROLES)?;
 
     state.globals().set("bot", bot_tbl)?;
 

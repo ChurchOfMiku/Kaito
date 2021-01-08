@@ -145,6 +145,12 @@ impl LuaModule {
         Ok(())
     }
 
+    async fn restart_sandbox(&self) -> Result<()> {
+        *self.get_sandbox_state().await? = LuaState::create_state(&self.bot, true)?;
+
+        Ok(())
+    }
+
     async fn eval_sandbox(
         &self,
         msg: Arc<dyn Message<impl Service>>,
