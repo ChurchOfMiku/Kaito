@@ -157,15 +157,11 @@ sandbox.run = function(state, source)
 end
 
 sandbox.think = function()
-    local remove = {}
-
     for k,v in pairs(sandbox.tasks) do
         if v() then
-            table.insert(remove, k)
+            sandbox.tasks[k] = nil
         end
     end
 
-    for _, k in pairs(remove) do
-        sandbox.tasks[k] = nil
-    end
+    collectgarbage()
 end
