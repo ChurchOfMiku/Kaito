@@ -209,7 +209,7 @@ impl LuaModule {
                     }
                 },
                 Err(TryRecvError::Empty) => {
-                    tokio::time::delay_for(Duration::from_millis(50)).await;
+                    tokio::time::sleep(Duration::from_millis(50)).await;
                 }
                 Err(TryRecvError::Disconnected) => break,
             }

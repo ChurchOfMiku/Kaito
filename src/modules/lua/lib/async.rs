@@ -51,7 +51,7 @@ pub fn lib_async(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
 
         let sender = sender.clone();
         tokio::spawn(async move {
-            tokio::time::delay_for(duration).await;
+            tokio::time::sleep(duration).await;
 
             sender
                 .send((
