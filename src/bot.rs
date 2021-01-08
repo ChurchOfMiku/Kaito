@@ -40,6 +40,10 @@ impl Bot {
         *self.ctx.write() = Some(ctx);
     }
 
+    pub fn get_ctx(&self) -> Arc<BotContext> {
+        self.ctx.read().clone().expect("bot context")
+    }
+
     pub async fn message(&self, msg: Arc<dyn Message<impl Service>>) {
         let ctx = get_ctx!(self);
 

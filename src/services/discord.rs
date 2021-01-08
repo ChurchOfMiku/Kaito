@@ -123,6 +123,18 @@ impl Service for DiscordService {
             self.clone(),
         )))
     }
+
+    async fn channel(self: &Arc<Self>, id: Self::ChannelId) -> Result<Arc<Self::Channel>> {
+        let channel = match self.cache_and_http().cache.channel(id).await {
+            Some(channel) => channel,
+            None => self.cache_and_http().http.get_channel(id).await?,
+        };
+
+        Ok(Arc::new(channel::DiscordChannel::new(
+            channel,
+            self.clone(),
+        )))
+    }
 }
 
 impl DiscordService {

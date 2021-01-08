@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -24,6 +24,29 @@ macro_rules! services {
                         }
                     ),+
                 }))
+            }
+
+            pub async fn send_message<'a, C>(&self, channel_id: ChannelId, content: C) -> Result<()>
+            where
+                C: ToMessageContent<'a>
+            {
+                match channel_id {
+                    $(
+                        ChannelId::$service_module_ident (id) => {
+                            let channel = self
+                                .$service_ident
+                                .as_ref()
+                                .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                                .service()
+                                .channel(id)
+                                .await?;
+
+                            channel.send(content).await?;
+                        }
+                    ),+
+                }
+
+                Ok(())
             }
         }
 
@@ -69,6 +92,7 @@ pub trait Service: 'static + Sized + Send + Sync {
     async fn unload(&self) -> Result<()>;
 
     async fn current_user(self: &Arc<Self>) -> Result<Arc<Self::User>>;
+    async fn channel(self: &Arc<Self>, id: Self::ChannelId) -> Result<Arc<Self::Channel>>;
 
     fn kind(&self) -> ServiceKind {
         Self::KIND

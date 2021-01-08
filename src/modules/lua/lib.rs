@@ -8,6 +8,11 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+#[macro_use]
+pub mod r#async;
+pub mod bot;
+pub mod os;
+
 fn remove_upwards_components(path: &Path) -> PathBuf {
     let mut p = PathBuf::new();
 
@@ -35,15 +40,16 @@ pub fn include_lua<'a>(
         .any(|c| c.as_os_str() == "**" || c.as_os_str().to_string_lossy().starts_with("*."))
     {
         let path = root_path.join(path);
-        let pattern = path.as_os_str().to_string_lossy();
+        let pattern = path.as_os_str().to_string_lossy().to_string();
         let paths = glob::glob(pattern.as_ref())?;
 
         for path in paths {
             let path = path?;
+            let name = Path::new(&path).strip_prefix(root_path).unwrap();
             let source = read_to_string(&path)?;
             state
                 .load(&source)
-                .set_name(path.as_os_str().to_string_lossy().as_bytes())?
+                .set_name(name.as_os_str().to_string_lossy().as_bytes())?
                 .eval()?;
         }
     } else {
@@ -61,10 +67,6 @@ pub fn include_lua<'a>(
 
     Ok(None)
 }
-
-#[macro_use]
-pub mod r#async;
-pub mod os;
 
 pub fn lib_include(root_path: PathBuf, state: &Lua) -> Result<()> {
     let include_fn = state.create_function(move |state, path: String| {

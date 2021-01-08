@@ -19,9 +19,11 @@ use crate::{
     settings::prelude::*,
     utils::shell_parser::parse_shell_args,
 };
+use lib::bot::BotMessage;
 use state::{LuaState, SandboxMsg, SandboxTerminationReason};
 
 pub struct LuaModule {
+    bot: Arc<Bot>,
     settings: Arc<LuaModuleSettings>,
     bot_state: Arc<Mutex<LuaState>>,
     sandbox_state: Arc<Mutex<LuaState>>,
@@ -66,6 +68,7 @@ impl Module for LuaModule {
         });
 
         Ok(Arc::new(LuaModule {
+            bot,
             settings: LuaModuleSettings::create()?,
             bot_state,
             sandbox_state,
@@ -126,8 +129,18 @@ impl Module for LuaModule {
 }
 
 impl LuaModule {
-    async fn on_command(&self, _msg: Arc<dyn Message<impl Service>>, rest: String) -> Result<()> {
-        let _args = parse_shell_args(&rest)?;
+    async fn on_command(&self, msg: Arc<dyn Message<impl Service>>, rest: String) -> Result<()> {
+        let args = parse_shell_args(&rest)?;
+
+        let lua_state = self.get_bot_state().await?;
+        let bot_msg = BotMessage::from_msg(self.bot.clone(), &msg).await?;
+
+        let res = lua_state.run_bot_command(bot_msg, args);
+        drop(lua_state);
+
+        if let Err(err) = res {
+            msg.channel().await?.send(err.to_string()).await?;
+        }
 
         Ok(())
     }
@@ -246,6 +259,10 @@ impl LuaModule {
         }
 
         Ok(())
+    }
+
+    pub async fn get_bot_state(&self) -> Result<MutexGuardArc<LuaState>> {
+        Ok(self.bot_state.lock_arc().await)
     }
 
     pub async fn get_sandbox_state(&self) -> Result<MutexGuardArc<LuaState>> {

@@ -17,7 +17,12 @@ use std::sync::{
 
 use super::{
     http,
-    lib::{include_lua, lib_include, os::lib_os, r#async::lib_async},
+    lib::{
+        bot::{lib_bot, BotMessage},
+        include_lua, lib_include,
+        os::lib_os,
+        r#async::lib_async,
+    },
 };
 use crate::bot::Bot;
 
@@ -75,6 +80,7 @@ impl LuaState {
         if sandbox {
             include_lua(&inner, &lua_root_path, "sandbox.lua")?;
         } else {
+            lib_bot(&inner)?;
             include_lua(&inner, &lua_root_path, "bot.lua")?;
         }
 
@@ -92,6 +98,15 @@ impl LuaState {
             async_receiver,
             http_rate_limiter,
         })
+    }
+
+    pub fn run_bot_command(&self, msg: BotMessage, args: Vec<String>) -> Result<()> {
+        let sandbox_tbl: Table = self.inner.globals().get("bot")?;
+        let on_command_fn: Function = sandbox_tbl.get("on_command")?;
+
+        on_command_fn.call((msg, args))?;
+
+        Ok(())
     }
 
     pub fn run_sandboxed(
