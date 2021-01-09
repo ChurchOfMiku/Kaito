@@ -61,6 +61,8 @@ impl EventHandler for SerenityHandler {
 #[async_trait]
 impl Service for DiscordService {
     const KIND: ServiceKind = ServiceKind::Discord;
+    const ID: &'static str = "discord";
+    const ID_SHORT: &'static str = "d";
     const NAME: &'static str = "Discord";
     const FEATURES: ServiceFeatures = ServiceFeatures::from_bits_truncate(
         ServiceFeatures::EMBEDS.bits()

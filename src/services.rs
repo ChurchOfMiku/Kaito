@@ -1,10 +1,48 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 pub mod discord;
 
 use crate::{bot::Bot, config::ConfigServices, message::ToMessageContent};
+
+macro_rules! service_id_functions {
+    ($id:ident, $(($service_module_ident:ident, $service:ty)),+) => {
+        #[allow(dead_code)]
+        impl $id {
+            pub fn to_str(&self) -> String {
+                match self {
+                    $($id::$service_module_ident(id) => format!("{}:{}", <$service as Service>::ID, id)),+
+                }
+            }
+
+            pub fn to_short_str(&self) -> String {
+                match self {
+                    $($id::$service_module_ident (id) => format!("{}:{}", <$service as Service>::ID_SHORT, id)),+
+                }
+            }
+
+            pub fn from_str(text: &str) -> Result<$id> {
+                if let Some(sep) = text.find(':') {
+                    let (before, after) = text.split_at(sep);
+                    let after = &after[1..];
+
+                    match before {
+                        $(
+                            <$service as Service>::ID | <$service as Service>::ID_SHORT => {
+                                let id = <$service as Service>::$id::from_str(after)?;
+                                return Ok($id::$service_module_ident(id));
+                            },
+                        ),+
+                        _ => return Err(anyhow!("unknown service \"{}\"", before))
+                    }
+                }
+
+                Err(anyhow!("id seperator missing: \"{}\"", text))
+            }
+        }
+    };
+}
 
 macro_rules! services {
     ($services_struct:ident, $($service_ident:ident => ($service_module_ident:ident, $service:ty)),*) => {
@@ -55,15 +93,21 @@ macro_rules! services {
             $($service_module_ident (<$service as Service>::ChannelId)),+
         }
 
+        service_id_functions!{ChannelId, $(($service_module_ident, $service)),+}
+
         #[derive(Copy, Clone, Hash, Eq, PartialEq)]
         pub enum ServerId {
             $($service_module_ident (<$service as Service>::ServerId)),+
         }
 
+        service_id_functions!{ServerId, $(($service_module_ident, $service)),+}
+
         #[derive(Copy, Clone, Hash, Eq, PartialEq)]
         pub enum UserId {
             $($service_module_ident (<$service as Service>::UserId)),+
         }
+
+        service_id_functions!{UserId, $(($service_module_ident, $service)),+}
 
         #[derive(Copy, Clone, Hash, PartialEq)]
         pub enum ServiceKind {
@@ -75,6 +119,8 @@ macro_rules! services {
 #[async_trait]
 pub trait Service: 'static + Sized + Send + Sync {
     const KIND: ServiceKind;
+    const ID: &'static str;
+    const ID_SHORT: &'static str;
     const NAME: &'static str;
     const FEATURES: ServiceFeatures;
 
