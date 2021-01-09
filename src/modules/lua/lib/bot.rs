@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::{
     bot::{Bot, ROLES},
-    services::{Channel, ChannelId, Message, Service},
+    services::{Channel, ChannelId, Message, Service, User},
 };
 
 pub fn lib_bot(state: &Lua, bot: &Arc<Bot>) -> Result<()> {
@@ -34,6 +34,7 @@ pub struct BotMessage {
     bot: Arc<Bot>,
     channel_id: ChannelId,
     content: String,
+    role: String,
 }
 
 impl BotMessage {
@@ -41,10 +42,13 @@ impl BotMessage {
         bot: Arc<Bot>,
         msg: &Arc<dyn Message<impl Service>>,
     ) -> Result<BotMessage> {
+        let role = bot.db().get_role_for_user(msg.author().id()).await?;
+
         Ok(BotMessage {
             bot,
             channel_id: msg.channel().await?.id(),
             content: msg.content().to_string(),
+            role,
         })
     }
 }
@@ -70,6 +74,9 @@ impl UserData for BotMessage {
             match index.as_str() {
                 "content" => Ok(mlua::Value::String(
                     state.create_string(msg.content.as_bytes())?,
+                )),
+                "role" => Ok(mlua::Value::String(
+                    state.create_string(msg.role.as_bytes())?,
                 )),
                 _ => Ok(mlua::Value::Nil),
             }

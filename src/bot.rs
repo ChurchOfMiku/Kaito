@@ -8,12 +8,14 @@ use std::{
 pub mod db;
 
 use crate::{
+    config::Config,
     modules::Modules,
     services::{Message, Service, Services},
 };
 use db::BotDb;
 
 pub const ROLES: &[&'static str] = &["guest", "trusted", "admin", "root"];
+pub const DEFAULT_ROLE: &'static str = ROLES[0];
 
 pub struct Bot {
     ctx: ArcSwapOption<BotContext>,
@@ -31,10 +33,10 @@ macro_rules! get_ctx {
 }
 
 impl Bot {
-    pub async fn init(root_path: PathBuf) -> Result<Arc<Bot>> {
+    pub async fn init(root_path: PathBuf, config: &Config) -> Result<Arc<Bot>> {
         Ok(Arc::new(Bot {
             ctx: ArcSwapOption::default(),
-            db: BotDb::new(&root_path, &root_path).await?,
+            db: BotDb::new(&root_path, &root_path, config).await?,
             root_path,
         }))
     }

@@ -173,6 +173,25 @@ bot.parse_args = function(cmd, args)
     return true, out
 end
 
+bot.has_role_or_higher = function(role, user_role)
+    local function entry_index(tbl, val)
+        for k,v in ipairs(tbl) do
+            if v == val then
+                return k
+            end
+        end
+
+        error("unknown role "..val)
+    end
+
+    if role == user_role then return true end
+
+    local role_idx = entry_index(bot.ROLES, role)
+    local user_role_idx = entry_index(bot.ROLES, user_role)
+
+    return user_role_idx > role_idx
+end
+
 bot.on_command = function(msg, args)
     local cmd_name = args[1]
     local args = {table.unpack(args, 2, #args)}
@@ -181,6 +200,12 @@ bot.on_command = function(msg, args)
 
     if not cmd then
         return
+    end
+
+    if cmd.role then
+        if not bot.has_role_or_higher(cmd.role, msg.role) then
+            return msg:reply("permission denied: this command requires the role of  " .. cmd.role .. " or higher.")
+        end
     end
 
     if bot.utils.array_has_value(args, "--help") then

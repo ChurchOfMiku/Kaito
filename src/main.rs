@@ -21,7 +21,7 @@ mod utils;
 async fn run() -> Result<()> {
     let config = config::load_config(&env::current_dir()?.join("config.toml"))?;
 
-    let bot = bot::Bot::init(env::current_dir()?).await?;
+    let bot = bot::Bot::init(env::current_dir()?, &config).await?;
     let modules = modules::Modules::init(bot.clone(), &config).await?;
     let services = services::Services::init(bot.clone(), &config.services).await?;
     let ctx = bot::BotContext::new(bot.clone(), modules, services);

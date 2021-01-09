@@ -1,11 +1,12 @@
 use anyhow::Result;
-use std::{fs, path::Path};
+use std::{collections::HashMap, fs, path::Path};
 
 use crate::services::discord::DiscordServiceConfig;
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct Config {
     pub services: ConfigServices,
+    pub user_roles: Option<HashMap<String, String>>,
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
