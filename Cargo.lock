@@ -1115,7 +1115,6 @@ dependencies = [
  "hyper-tls",
  "mlua",
  "once_cell",
- "parking_lot",
  "paste",
  "serde",
  "serde_derive",

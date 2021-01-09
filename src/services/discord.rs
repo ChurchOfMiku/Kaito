@@ -1,13 +1,12 @@
 use anyhow::Result;
 use arc_swap::ArcSwapOption;
 use futures::future::{AbortHandle, Abortable};
-use parking_lot::Mutex;
 use serenity::{
     model::{channel::Message, gateway::Ready},
     prelude::*,
     CacheAndHttp,
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 mod channel;
@@ -42,7 +41,7 @@ impl SerenityHandler {
 #[async_trait]
 impl EventHandler for SerenityHandler {
     async fn ready(&self, _: Context, ready: Ready) {
-        if let Some(abort_handle) = self.service.ready_abort.lock().take() {
+        if let Some(abort_handle) = self.service.ready_abort.lock().unwrap().take() {
             abort_handle.abort();
         }
 
@@ -107,7 +106,7 @@ impl Service for DiscordService {
         // Block on the client task until it is ready or it has errored and yielded
         let (abort_handle, abort_registration) = AbortHandle::new_pair();
         let join_task = Abortable::new(join_task, abort_registration);
-        *service.ready_abort.lock() = Some(abort_handle);
+        *service.ready_abort.lock().unwrap() = Some(abort_handle);
 
         if let Ok(res) = join_task.await {
             res??;

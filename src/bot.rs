@@ -1,5 +1,5 @@
 use anyhow::Result;
-use parking_lot::RwLock;
+use arc_swap::ArcSwapOption;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -11,18 +11,19 @@ use crate::{
     modules::Modules,
     services::{Message, Service, Services},
 };
+use db::BotDb;
 
 pub const ROLES: &[&'static str] = &["guest", "trusted", "admin", "root"];
 
 pub struct Bot {
-    ctx: RwLock<Option<Arc<BotContext>>>,
-    db: Arc<db::BotDb>,
+    ctx: ArcSwapOption<BotContext>,
+    db: Arc<BotDb>,
     root_path: PathBuf,
 }
 
 macro_rules! get_ctx {
     ($self:expr) => {
-        match &*$self.ctx.read() {
+        match &*$self.ctx.load() {
             Some(c) => c.clone(),
             None => return,
         }
@@ -32,8 +33,8 @@ macro_rules! get_ctx {
 impl Bot {
     pub async fn init(root_path: PathBuf) -> Result<Arc<Bot>> {
         Ok(Arc::new(Bot {
-            ctx: RwLock::new(None),
-            db: db::BotDb::new(&root_path, &root_path).await?,
+            ctx: ArcSwapOption::default(),
+            db: BotDb::new(&root_path, &root_path).await?,
             root_path,
         }))
     }
@@ -42,12 +43,16 @@ impl Bot {
         &self.root_path
     }
 
+    pub fn db(&self) -> &Arc<BotDb> {
+        &self.db
+    }
+
     pub fn set_ctx(&self, ctx: Arc<BotContext>) {
-        *self.ctx.write() = Some(ctx);
+        self.ctx.store(Some(ctx));
     }
 
     pub fn get_ctx(&self) -> Arc<BotContext> {
-        self.ctx.read().clone().expect("bot context")
+        self.ctx.load().clone().expect("bot context")
     }
 
     pub async fn message(&self, msg: Arc<dyn Message<impl Service>>) {
