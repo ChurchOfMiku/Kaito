@@ -1,6 +1,8 @@
 bot = bot or {}
 bot.cmds = bot.cmds or {}
 
+include("./lib/async.lua")
+
 function bot.think()
 end
 

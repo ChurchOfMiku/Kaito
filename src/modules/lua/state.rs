@@ -7,7 +7,8 @@ use governor::{
 };
 use mlua::{
     prelude::{LuaError, LuaMultiValue, LuaValue},
-    Function, Lua, RegistryKey, StdLib, Table, ToLua, UserData, UserDataMethods,
+    Function, Lua, RegistryKey, StdLib, Table, Thread, ThreadStatus, ToLua, UserData,
+    UserDataMethods,
 };
 use paste::paste;
 use std::sync::{
@@ -24,7 +25,7 @@ use super::{
         r#async::lib_async,
     },
 };
-use crate::bot::Bot;
+use crate::{bot::Bot, services::ChannelId, utils::escape_untrusted_text};
 
 pub type LuaAsyncCallback = (
     RegistryKey,
@@ -47,11 +48,13 @@ macro_rules! atomic_get_set {
 }
 
 pub struct LuaState {
+    bot: Arc<Bot>,
     inner: Lua,
     sandbox: bool,
     async_sender: Sender<LuaAsyncCallback>,
     async_receiver: Receiver<LuaAsyncCallback>,
     http_rate_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, QuantaClock>>,
+    thread_id: AtomicU64,
 }
 
 impl LuaState {
@@ -81,6 +84,8 @@ impl LuaState {
             include_lua(&inner, &lua_root_path, "sandbox.lua")?;
         } else {
             lib_bot(&inner, bot)?;
+            inner.set_named_registry_value("__ASYNC_THREADS", inner.create_table()?)?;
+            inner.set_named_registry_value("__ASYNC_THREADS_CHANNELS", inner.create_table()?)?;
             include_lua(&inner, &lua_root_path, "bot.lua")?;
         }
 
@@ -92,11 +97,13 @@ impl LuaState {
         )));
 
         Ok(LuaState {
+            bot: bot.clone(),
             inner,
             sandbox,
             async_sender,
             async_receiver,
             http_rate_limiter,
+            thread_id: AtomicU64::new(0),
         })
     }
 
@@ -104,7 +111,19 @@ impl LuaState {
         let sandbox_tbl: Table = self.inner.globals().get("bot")?;
         let on_command_fn: Function = sandbox_tbl.get("on_command")?;
 
-        on_command_fn.call((msg, args))?;
+        let thread = self.inner.create_thread(on_command_fn)?;
+        let channel_id = msg.channel_id();
+        thread.resume((msg, args))?;
+
+        if thread.status() == ThreadStatus::Resumable {
+            let threads: Table = self.inner.named_registry_value("__ASYNC_THREADS")?;
+            let thread_channels: Table = self
+                .inner
+                .named_registry_value("__ASYNC_THREADS_CHANNELS")?;
+            let id = self.thread_id.fetch_add(1, Ordering::AcqRel);
+            threads.set(id, thread)?;
+            thread_channels.set(id, channel_id.to_short_str())?;
+        }
 
         Ok(())
     }
@@ -148,6 +167,40 @@ impl LuaState {
             let bot_tbl: Table = self.inner.globals().get("bot")?;
             let think_fn: Function = bot_tbl.get("think")?;
             think_fn.call(())?;
+
+            let threads: Table = self.inner.named_registry_value("__ASYNC_THREADS")?;
+            let thread_channels: Table = self
+                .inner
+                .named_registry_value("__ASYNC_THREADS_CHANNELS")?;
+
+            for pair in threads.clone().pairs::<u64, Thread>() {
+                let (id, thread) = pair?;
+
+                if let Err(err) = thread.resume::<_, ()>(()) {
+                    if let Ok(channel_str) = thread_channels.get::<u64, String>(id) {
+                        let id = ChannelId::from_str(&channel_str)?;
+                        let bot = self.bot.clone();
+
+                        tokio::spawn(async move {
+                            bot.get_ctx()
+                                .services()
+                                .send_message(
+                                    id,
+                                    escape_untrusted_text(id.service_kind(), err.to_string()),
+                                )
+                                .await
+                                .ok();
+                        });
+                    } else {
+                        println!("error during bot async think: {}", err.to_string());
+                    }
+                }
+
+                if thread.status() != ThreadStatus::Resumable {
+                    threads.set(id, LuaValue::Nil)?;
+                    thread_channels.set(id, LuaValue::Nil)?;
+                }
+            }
         }
 
         loop {

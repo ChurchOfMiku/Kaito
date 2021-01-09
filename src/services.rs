@@ -40,6 +40,12 @@ macro_rules! service_id_functions {
 
                 Err(anyhow!("id seperator missing: \"{}\"", text))
             }
+
+            pub fn service_kind(&self) -> ServiceKind {
+                match self {
+                    $($id::$service_module_ident (_) => ServiceKind::$service_module_ident),+
+                }
+            }
         }
     };
 }

@@ -51,6 +51,10 @@ impl BotMessage {
             role,
         })
     }
+
+    pub fn channel_id(&self) -> ChannelId {
+        self.channel_id
+    }
 }
 
 impl UserData for BotMessage {

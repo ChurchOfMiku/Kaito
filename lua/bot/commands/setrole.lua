@@ -15,8 +15,7 @@ bot.add_command("setrole", {
         }
     },
     callback = function(msg, args)
-        print(args.user, args.role)
-        bot.set_role(args.user, args.role)
+        bot.set_role(args.user, args.role):await()
     end,
     role = "root",
 })
