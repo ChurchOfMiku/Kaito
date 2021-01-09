@@ -5,6 +5,8 @@ use std::{
     sync::Arc,
 };
 
+pub mod db;
+
 use crate::{
     modules::Modules,
     services::{Message, Service, Services},
@@ -14,6 +16,7 @@ pub const ROLES: &[&'static str] = &["guest", "trusted", "admin", "root"];
 
 pub struct Bot {
     ctx: RwLock<Option<Arc<BotContext>>>,
+    db: Arc<db::BotDb>,
     root_path: PathBuf,
 }
 
@@ -30,6 +33,7 @@ impl Bot {
     pub async fn init(root_path: PathBuf) -> Result<Arc<Bot>> {
         Ok(Arc::new(Bot {
             ctx: RwLock::new(None),
+            db: db::BotDb::new(&root_path, &root_path).await?,
             root_path,
         }))
     }

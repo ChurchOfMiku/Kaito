@@ -5,5 +5,6 @@ pkgs.mkShell {
     pkg-config
     lua5_4
     openssl
+    sqlite
   ];
 }
