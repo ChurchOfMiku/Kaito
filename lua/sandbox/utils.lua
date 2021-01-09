@@ -1,6 +1,6 @@
 sandbox.utils = sandbox.utils or {}
 
-sandbox.utils.deepcopy = function(orig)
+function sandbox.utils.deepcopy(orig)
     local deepcopy = sandbox.utils.deepcopy
 
     -- http://lua-users.org/wiki/CopyTable
@@ -25,7 +25,7 @@ sandbox.utils.deepcopy = function(orig)
     return copy
 end
 
-sandbox.utils.setfenv = function(fn, env)
+function sandbox.utils.setfenv(fn, env)
     local i = 1
     while true do
         local name = debug.getupvalue(fn, i)
@@ -49,7 +49,7 @@ sandbox.utils.setfenv = function(fn, env)
     return fn
 end
 
-sandbox.utils.getfenv = function(fn)
+function sandbox.utils.getfenv(fn)
     local i = 1
     while true do
         local name, val = debug.getupvalue(fn, i)
@@ -62,7 +62,7 @@ sandbox.utils.getfenv = function(fn)
     end
 end
 
-sandbox.utils.is_array = function(tbl)
+function sandbox.utils.is_array(tbl)
     local i = 0
     for _ in pairs(tbl) do
         i = i + 1
@@ -71,7 +71,7 @@ sandbox.utils.is_array = function(tbl)
     return true
 end
 
-sandbox.utils.table_to_string = function(tbl, indent, key, tbls)
+function sandbox.utils.table_to_string(tbl, indent, key, tbls)
     indent = indent or 0
     tbls = tbls or {}
 

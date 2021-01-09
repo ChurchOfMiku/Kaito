@@ -23,7 +23,7 @@ sandbox.env.base_env = {
     type = type
 }
 
-sandbox.env.get_env = function()
+function sandbox.env.get_env()
     local env = sandbox.env.env or {}
 
     for k,v in pairs(sandbox.env.base_env) do

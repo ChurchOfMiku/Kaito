@@ -7,7 +7,7 @@ include("./sandbox/env.lua")
 
 local HOOK_EVERY_INSTRUCTION = 32
 
-sandbox.exec = function(state, fenv, fn)
+function sandbox.exec(state, fenv, fn)
     local instructions_run = state:get_instructions_run()
     local max_instructions = state:get_instruction_limit()
 
@@ -40,7 +40,7 @@ sandbox.exec = function(state, fenv, fn)
     return sandbox.run_coroutine(thread)
 end
 
-sandbox.run_coroutine = function(thread)
+function sandbox.run_coroutine(thread)
     -- Execute the first coroutine resume
     local ret = {pcall(coroutine.resume, thread)}
 
@@ -94,7 +94,7 @@ local function update_env(fenv, state)
     return fenv
 end
 
-sandbox.async_callback = function(state, future, success, ...)
+function sandbox.async_callback(state, future, success, ...)
     local args = {...}
     sandbox.run(state, function()
         if success then
@@ -105,7 +105,7 @@ sandbox.async_callback = function(state, future, success, ...)
     end)
 end
 
-sandbox.run = function(state, source)
+function sandbox.run(state, source)
     local fenv = update_env(sandbox.env.get_env(), state)
 
     local fn, err
@@ -162,7 +162,7 @@ sandbox.run = function(state, source)
     end
 end
 
-sandbox.think = function()
+function sandbox.think()
     for k,v in pairs(sandbox.tasks) do
         if v() then
             sandbox.tasks[k] = nil

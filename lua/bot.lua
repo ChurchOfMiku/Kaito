@@ -1,10 +1,10 @@
 bot = bot or {}
 bot.cmds = bot.cmds or {}
 
-bot.think = function()
+function bot.think()
 end
 
-bot.add_command = function(cmd, options)
+function bot.add_command(cmd, options)
     options.cmd = cmd
     -- Needed for parsing and help
     options._arguments = {}
@@ -32,7 +32,7 @@ bot.add_command = function(cmd, options)
     bot.cmds[cmd] = options
 end
 
-bot.help = function(msg, cmd)
+function bot.help(msg, cmd)
     local usage_options = ""
     local usage_arguments = ""
 
@@ -102,7 +102,7 @@ bot.help = function(msg, cmd)
     msg:reply(out)
 end
 
-bot.parse_args = function(cmd, args)
+function bot.parse_args(cmd, args)
     local out = {}
 
     local taking_opt_value
@@ -173,7 +173,7 @@ bot.parse_args = function(cmd, args)
     return true, out
 end
 
-bot.has_role_or_higher = function(role, user_role)
+function bot.has_role_or_higher(role, user_role)
     local function entry_index(tbl, val)
         for k,v in ipairs(tbl) do
             if v == val then
@@ -192,7 +192,7 @@ bot.has_role_or_higher = function(role, user_role)
     return user_role_idx > role_idx
 end
 
-bot.on_command = function(msg, args)
+function bot.on_command(msg, args)
     local cmd_name = args[1]
     local args = {table.unpack(args, 2, #args)}
 
