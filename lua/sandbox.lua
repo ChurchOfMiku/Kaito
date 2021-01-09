@@ -5,17 +5,18 @@ include("./lib/async.lua")
 include("./sandbox/utils.lua")
 include("./sandbox/env.lua")
 
-local HOOK_EVERY_INSTRUCTION = 1024
+local HOOK_EVERY_INSTRUCTION = 32
 
 sandbox.exec = function(state, fenv, fn)
     local instructions_run = state:get_instructions_run()
-    local max_instructions = HOOK_EVERY_INSTRUCTION * 8
+    local max_instructions = state:get_instruction_limit()
 
     -- Set the function env
     sandbox.utils.setfenv(fn, fenv)
 
     -- Create the coroutine thread
     local thread = coroutine.create(fn)
+    local timeout = os.clock() + 2
 
     debug.sethook(
         thread,
@@ -25,6 +26,11 @@ sandbox.exec = function(state, fenv, fn)
             if instructions_run >= max_instructions then
                 state:terminate("exec")
                 error("Execution quota exceeded")
+            end
+
+            if os.clock() > timeout then
+                state:terminate("time")
+                error("Execution time limit reached")
             end
         end,
         "",

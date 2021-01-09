@@ -126,6 +126,7 @@ impl LuaState {
                 lines_left: AtomicU64::new(10),
                 characters_left: AtomicU64::new(2000),
                 http_calls_left: AtomicU64::new(2),
+                instructions: 8192,
             },
             http_rate_limiter: self.http_rate_limiter.clone(),
         }));
@@ -220,6 +221,7 @@ pub enum SandboxMsg {
 
 pub enum SandboxTerminationReason {
     ExecutionQuota,
+    TimeLimit,
 }
 
 #[derive(Clone)]
@@ -237,6 +239,7 @@ pub struct SandboxLimits {
     pub lines_left: AtomicU64,
     pub characters_left: AtomicU64,
     pub http_calls_left: AtomicU64,
+    pub instructions: u64,
 }
 
 impl SandboxLimits {
@@ -265,6 +268,10 @@ impl UserData for SandboxState {
             Ok(this.0.instructions_run.load(Ordering::Relaxed))
         });
 
+        methods.add_method("get_instruction_limit", |_, this, _: ()| {
+            Ok(this.0.limits.instructions)
+        });
+
         methods.add_method("set_state", |state, this, _: ()| {
             state.set_named_registry_value("__SANDBOX_STATE", this.clone())?;
             Ok(())
@@ -280,6 +287,7 @@ impl UserData for SandboxState {
         methods.add_method("terminate", |_, this, value: String| {
             let reason = match value.as_ref() {
                 "exec" => SandboxTerminationReason::ExecutionQuota,
+                "time" => SandboxTerminationReason::TimeLimit,
                 _ => {
                     return Err(LuaError::RuntimeError(format!(
                         "unknown termination reason: \"{}\"",

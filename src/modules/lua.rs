@@ -15,9 +15,9 @@ mod utils;
 use super::{Module, ModuleKind};
 use crate::{
     bot::Bot,
-    services::{Channel, ChannelId, Message, Server, ServerId, Service, ServiceKind, User},
+    services::{Channel, ChannelId, Message, Server, ServerId, Service, User},
     settings::prelude::*,
-    utils::shell_parser::parse_shell_args,
+    utils::{escape_untrusted_text, shell_parser::parse_shell_args},
 };
 use lib::bot::BotMessage;
 use state::{LuaState, SandboxMsg, SandboxTerminationReason};
@@ -193,7 +193,13 @@ impl LuaModule {
                     }
                     SandboxMsg::Error(err) => {
                         if errors && !err.is_empty() {
-                            msg.channel().await?.send(format!("error: {}", err)).await?;
+                            msg.channel()
+                                .await?
+                                .send(escape_untrusted_text(
+                                    msg.service().kind(),
+                                    format!("error: {}", err),
+                                ))
+                                .await?;
                         }
                     }
                     SandboxMsg::Terminated(reason) => {
@@ -202,6 +208,12 @@ impl LuaModule {
                                 msg.channel()
                                     .await?
                                     .send("Execution quota exceeded, terminated execution")
+                                    .await?;
+                            }
+                            SandboxTerminationReason::TimeLimit => {
+                                msg.channel()
+                                    .await?
+                                    .send("Execution time limit reached, terminated execution")
                                     .await?;
                             }
                         }
@@ -234,12 +246,7 @@ impl LuaModule {
 
                         if characters_left > len {
                             characters_left -= len;
-                            // Avoid people getting the bot to mention people
-                            if msg.service().kind() == ServiceKind::Discord {
-                                out.push_str(&line.replace('@', "@\u{200B}"));
-                            } else {
-                                out.push_str(&line);
-                            }
+                            out.push_str(&escape_untrusted_text(msg.service().kind(), line));
 
                             if lines.peek().is_some() {
                                 out.push_str("\n");
