@@ -15,7 +15,7 @@ mod utils;
 use super::{Module, ModuleKind};
 use crate::{
     bot::Bot,
-    services::{Channel, ChannelId, Message, Server, ServerId, Service, User},
+    services::{Channel, ChannelId, Message, Server, ServerId, Service, ServiceKind, User},
     settings::prelude::*,
     utils::{escape_untrusted_text, shell_parser::parse_shell_args},
 };
@@ -161,6 +161,8 @@ impl LuaModule {
         errors: bool,
         code: String,
     ) -> Result<()> {
+        let code = trim_codeblocks(msg.service().kind(), code);
+
         let lua_state = self.get_sandbox_state().await?;
 
         let (sandbox_state, recv) = match lua_state.run_sandboxed(&code) {
@@ -284,5 +286,25 @@ impl LuaModule {
 
     pub async fn get_sandbox_state(&self) -> Result<MutexGuardArc<LuaState>> {
         Ok(self.sandbox_state.lock_arc().await)
+    }
+}
+
+fn trim_codeblocks(service: ServiceKind, text: String) -> String {
+    let trimmed = text.trim();
+
+    match service {
+        ServiceKind::Discord => {
+            if let Some(inside) = trimmed
+                .strip_prefix("```lua\n")
+                .or_else(|| trimmed.strip_prefix("```"))
+                .and_then(|s| s.strip_suffix("```"))
+            {
+                inside.trim().to_string()
+            } else {
+                text
+            }
+        }
+        #[allow(unreachable_patterns)]
+        _ => text,
     }
 }
