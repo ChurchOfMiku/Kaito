@@ -76,7 +76,7 @@ impl LuaState {
         lib_async(&inner, async_sender.clone())?;
         lib_os(&inner)?;
 
-        let lua_root_path = bot.root_path().join("lua");
+        let lua_root_path = bot.share_path().join("lua");
 
         lib_include(lua_root_path.clone(), &inner)?;
 

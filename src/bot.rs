@@ -20,7 +20,8 @@ pub const DEFAULT_ROLE: &'static str = ROLES[0];
 pub struct Bot {
     ctx: ArcSwapOption<BotContext>,
     db: Arc<BotDb>,
-    root_path: PathBuf,
+    data_path: PathBuf,
+    share_path: PathBuf,
 }
 
 macro_rules! get_ctx {
@@ -33,16 +34,21 @@ macro_rules! get_ctx {
 }
 
 impl Bot {
-    pub async fn init(root_path: PathBuf, config: &Config) -> Result<Arc<Bot>> {
+    pub async fn init(
+        data_path: PathBuf,
+        share_path: PathBuf,
+        config: &Config,
+    ) -> Result<Arc<Bot>> {
         Ok(Arc::new(Bot {
             ctx: ArcSwapOption::default(),
-            db: BotDb::new(&root_path, &root_path, config).await?,
-            root_path,
+            db: BotDb::new(&data_path, &share_path, config).await?,
+            data_path,
+            share_path,
         }))
     }
 
-    pub fn root_path(&self) -> &Path {
-        &self.root_path
+    pub fn share_path(&self) -> &Path {
+        &self.share_path
     }
 
     pub fn db(&self) -> &Arc<BotDb> {

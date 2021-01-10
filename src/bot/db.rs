@@ -14,7 +14,7 @@ pub struct BotDb {
 }
 
 impl BotDb {
-    pub async fn new(root_path: &Path, data_path: &Path, config: &Config) -> Result<Arc<BotDb>> {
+    pub async fn new(data_path: &Path, share_path: &Path, config: &Config) -> Result<Arc<BotDb>> {
         let pool = Pool::connect_with(
             SqliteConnectOptions::new()
                 .filename(data_path.join("kaito.db"))
@@ -23,7 +23,7 @@ impl BotDb {
         )
         .await?;
 
-        let m = Migrator::new(root_path.join("migrations")).await?;
+        let m = Migrator::new(share_path.join("migrations")).await?;
         m.run(&pool).await?;
 
         let db = Arc::new(BotDb { pool });

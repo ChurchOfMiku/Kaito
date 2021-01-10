@@ -6,7 +6,7 @@ extern crate bitflags;
 extern crate serde_derive;
 
 use anyhow::Result;
-use std::env;
+use std::{env, path::PathBuf};
 
 #[macro_use]
 mod settings;
@@ -19,9 +19,21 @@ mod services;
 mod utils;
 
 async fn run() -> Result<()> {
-    let config = config::load_config(&env::current_dir()?.join("config.toml"))?;
+    let config_path = env::var("KAITO_CONFIG_FILE")
+        .map(|p| PathBuf::from(p))
+        .or_else(|_| env::current_dir().map(|p| p.join("config.toml")))?;
 
-    let bot = bot::Bot::init(env::current_dir()?, &config).await?;
+    let data_path = env::var("KAITO_DATA_PATH")
+        .map(|p| PathBuf::from(p))
+        .or_else(|_| env::current_dir())?;
+
+    let share_path = env::var("KAITO_SHARE_PATH")
+        .map(|p| PathBuf::from(p))
+        .or_else(|_| env::current_dir())?;
+
+    let config = config::load_config(&config_path)?;
+
+    let bot = bot::Bot::init(data_path, share_path, &config).await?;
     let modules = modules::Modules::init(bot.clone(), &config).await?;
     let services = services::Services::init(bot.clone(), &config.services).await?;
     let ctx = bot::BotContext::new(bot.clone(), modules, services);
