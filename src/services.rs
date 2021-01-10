@@ -92,6 +92,52 @@ macro_rules! services {
 
                 Ok(())
             }
+
+            pub async fn find_user(&self, service: ServiceKind, find: &str) -> Result<Arc<dyn User<impl Service>>> {
+                if let Some(sep) = find.find(':') {
+                    let (before, after) = find.split_at(sep);
+                    let after = &after[1..];
+
+                    match before {
+                        $(
+                            <$service as Service>::ID | <$service as Service>::ID_SHORT => {
+                                let user = self
+                                    .get_service_from_kind(<$service as Service>::KIND)?
+                                    .find_user(after).await?;
+
+                                return Ok(user)
+                            },
+                        ),+
+                        _ => {}
+                    }
+                }
+
+                Ok(
+                    self
+                        .get_service_from_kind(service)?
+                        .find_user(find)
+                        .await?
+                )
+            }
+
+            pub fn get_service_from_kind(&self, kind: ServiceKind) -> Result<&Arc<impl Service>> {
+                match kind {
+                    $(
+                        ServiceKind::$service_module_ident => {
+                            return Ok(self.$service_ident
+                                .as_ref()
+                                .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                                .service())
+                        },
+                    ),+
+                }
+            }
+
+            pub fn id_from_kind(kind: ServiceKind) -> &'static str {
+                match kind {
+                    $(ServiceKind::$service_module_ident => <$service as Service>::ID),+
+                }
+            }
         }
 
         #[derive(Copy, Clone, Hash, Eq, PartialEq)]
@@ -119,6 +165,15 @@ macro_rules! services {
         pub enum ServiceKind {
             $($service_module_ident),+
         }
+
+        impl ServiceKind {
+            pub fn from_str(s: &str) -> Option<ServiceKind> {
+                match s {
+                    $(stringify!($service_ident) => Some(ServiceKind::$service_module_ident),)+
+                    _ => None
+                }
+            }
+        }
     };
 }
 
@@ -145,6 +200,7 @@ pub trait Service: 'static + Sized + Send + Sync {
 
     async fn current_user(self: &Arc<Self>) -> Result<Arc<Self::User>>;
     async fn channel(self: &Arc<Self>, id: Self::ChannelId) -> Result<Arc<Self::Channel>>;
+    async fn find_user(self: &Arc<Self>, find: &str) -> Result<Arc<Self::User>>;
 
     fn kind(&self) -> ServiceKind {
         Self::KIND

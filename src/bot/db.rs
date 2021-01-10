@@ -72,6 +72,45 @@ impl BotDb {
         Ok(())
     }
 
+    pub async fn restrict_user(&self, user_id: UserId, restrictor_user_id: UserId) -> Result<()> {
+        self.pool()
+            .execute(
+                sqlx::query(
+                    "INSERT INTO restrictions ( user_id, restrictor_user_id ) VALUES ( ?, ? )",
+                )
+                .bind(user_id.to_short_str())
+                .bind(restrictor_user_id.to_short_str()),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn unrestrict_user(&self, user_id: UserId) -> Result<()> {
+        self.pool()
+            .execute(
+                sqlx::query("DELETE FROM restrictions WHERE user_id = ?")
+                    .bind(user_id.to_short_str()),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn is_restricted(&self, user_id: UserId) -> Result<bool> {
+        let restricted = sqlx::query_as("SELECT user_id FROM restrictions WHERE user_id = ?")
+            .bind(user_id.to_short_str())
+            .fetch_one(self.pool())
+            .await
+            .map(|_a: (String,)| true)
+            .or_else(|err| match err {
+                sqlx::Error::RowNotFound => Ok(false),
+                _ => Err(err),
+            })?;
+
+        Ok(restricted)
+    }
+
     pub fn pool(&self) -> &Pool<Sqlite> {
         &self.pool
     }

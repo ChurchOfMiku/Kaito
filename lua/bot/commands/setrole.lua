@@ -15,7 +15,14 @@ bot.add_command("setrole", {
         }
     },
     callback = function(msg, args)
-        bot.set_role(args.user, args.role):await()
+        local user = bot.find_user(msg.service, args.user):await()
+
+        if user then
+            bot.set_role(user, args.role):await()
+            msg:reply("changed role of " .. user.name .. " to "..args.role)
+        else
+            msg:reply("error: no user was found")
+        end
     end,
     role = "root",
 })

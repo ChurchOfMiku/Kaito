@@ -175,7 +175,7 @@ function bot.parse_args(cmd, args)
     return true, out
 end
 
-function bot.has_role_or_higher(role, user_role)
+function bot.has_role_or_higher(role, user_role, only_higher)
     local function entry_index(tbl, val)
         for k,v in ipairs(tbl) do
             if v == val then
@@ -186,7 +186,7 @@ function bot.has_role_or_higher(role, user_role)
         error("unknown role "..val)
     end
 
-    if role == user_role then return true end
+    if not only_higher and role == user_role then return true end
 
     local role_idx = entry_index(bot.ROLES, role)
     local user_role_idx = entry_index(bot.ROLES, user_role)

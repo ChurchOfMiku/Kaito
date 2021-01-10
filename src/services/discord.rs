@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use arc_swap::ArcSwapOption;
 use futures::future::{AbortHandle, Abortable};
 use serenity::{
@@ -6,7 +6,10 @@ use serenity::{
     prelude::*,
     CacheAndHttp,
 };
-use std::sync::{Arc, Mutex};
+use std::{
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 use thiserror::Error;
 
 mod channel;
@@ -135,6 +138,22 @@ impl Service for DiscordService {
             channel,
             self.clone(),
         )))
+    }
+
+    async fn find_user(self: &Arc<Self>, find: &str) -> Result<Arc<Self::User>> {
+        let find = find.trim();
+
+        if let Some(id) = serenity::utils::parse_username(find).or(u64::from_str(find).ok()) {
+            let user = match self.cache_and_http().cache.user(id).await {
+                Some(channel) => channel,
+                None => self.cache_and_http().http.get_user(id).await?,
+            };
+
+            Ok(Arc::new(user::DiscordUser::new(user, self.clone())))
+        } else {
+            // TODO: Look in caches for name matches?
+            return Err(anyhow!("unable to parse \"{}\" as a discord user", find));
+        }
     }
 }
 

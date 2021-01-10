@@ -83,6 +83,10 @@ impl Module for LuaModule {
             return Ok(());
         }
 
+        if self.bot.db().is_restricted(msg.author().id()).await? {
+            return Ok(());
+        }
+
         // Get the channel and server
         let channel = msg.channel().await?;
         let server = channel.server().await?;

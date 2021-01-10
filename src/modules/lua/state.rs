@@ -83,7 +83,7 @@ impl LuaState {
         if sandbox {
             include_lua(&inner, &lua_root_path, "sandbox.lua")?;
         } else {
-            lib_bot(&inner, bot)?;
+            lib_bot(&inner, bot, async_sender.clone())?;
             inner.set_named_registry_value("__ASYNC_THREADS", inner.create_table()?)?;
             inner.set_named_registry_value("__ASYNC_THREADS_CHANNELS", inner.create_table()?)?;
             include_lua(&inner, &lua_root_path, "bot.lua")?;
