@@ -115,16 +115,13 @@ impl Module for LuaModule {
             .value(server.id(), channel.id())
             .await?;
 
-        match content.strip_prefix(&lua_prefix) {
+        return match content.strip_prefix(&lua_prefix) {
             Some(rest) => {
                 let text = rest.to_string();
-                return self.eval_sandbox(msg, true, text).await;
+                self.eval_sandbox(msg, true, text).await
             }
-            None => {}
+            None => ()
         };
-
-        let text = content.to_string();
-        self.eval_sandbox(msg, false, text).await
     }
 
     async fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> Result<bool> {
