@@ -1,0 +1,5 @@
+[services.discord]
+token = "<discord token>"
+
+[user_roles]
+"discord:<discord id>" = "root"
