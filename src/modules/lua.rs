@@ -34,7 +34,7 @@ settings! {
     {
         enable: bool => (true, SettingFlags::SERVER_OVERRIDE, "Enable the lua module", []),
         prefix: String => ("&".into(), SettingFlags::empty(), "Set the message prefix for lua commands", [max_len => 8]),
-        always_eval: bool => (true, SettingFlags::SERVER_OVERRIDE, "Evaluate all messages in the sandbox", []),
+        always_eval: bool => (false, SettingFlags::SERVER_OVERRIDE, "Evaluate all messages in the sandbox", []),
         lua_prefix: String => ("]".into(), SettingFlags::empty(), "Set the lua prefix for runnning lua code in the sandbox with errors", [max_len => 8])
     }
 }
@@ -123,8 +123,17 @@ impl Module for LuaModule {
             None => {}
         };
 
-        let text = content.to_string();
-        self.eval_sandbox(msg, false, text).await
+        if self
+            .settings
+            .always_eval
+            .value(server.id(), channel.id())
+            .await?
+        {
+            let text = content.to_string();
+            self.eval_sandbox(msg, false, text).await
+        } else {
+            Ok(())
+        }
     }
 
     async fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> Result<bool> {
