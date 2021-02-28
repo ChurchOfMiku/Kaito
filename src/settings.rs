@@ -1,5 +1,4 @@
 use anyhow::Result;
-use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::{marker::PhantomData, str::FromStr, sync::Arc};
 use thiserror::Error;
@@ -56,8 +55,6 @@ where
     help: String,
     parameters: T::Parameters,
     default: T,
-    cached_channel_values: DashMap<ChannelId, T>,
-    cached_server_values: DashMap<ServerId, T>,
     _phantom: PhantomData<M>,
 }
 
@@ -84,8 +81,6 @@ where
             flags,
             help,
             default,
-            cached_channel_values: DashMap::new(),
-            cached_server_values: DashMap::new(),
             _phantom: PhantomData::default(),
         })
     }
@@ -114,59 +109,39 @@ where
         }
     }
 
-    pub fn flush_cache(&self) {
-        self.cached_channel_values.clear();
-        self.cached_server_values.clear();
-    }
-
     async fn get_channel_value(&self, channel_id: ChannelId) -> Result<Option<T>> {
-        if let Some(cached) = self
-            .cached_channel_values
-            .get(&channel_id)
-            .map(|v| v.value().clone())
+        let raw_value = match self
+            .bot
+            .db()
+            .get_channel_setting(channel_id, &format!("{}/{}", M::ID, self.name))
+            .await?
         {
-            Ok(Some(cached))
-        } else {
-            let raw_value = match self
-                .bot
-                .db()
-                .get_channel_setting(channel_id, &format!("{}/{}", M::ID, self.name))
-                .await?
-            {
-                Some(v) => v,
-                None => return Ok(None),
-            };
+            Some(v) => v,
+            None => return Ok(None),
+        };
 
-            // Just go back to default if the raw value is invalid
-            Ok(T::set_value(&raw_value, &self.parameters).ok())
-        }
+        // Just go back to default if the raw value is invalid
+        Ok(T::set_value(&raw_value, &self.parameters).ok())
     }
 
     async fn get_server_value(&self, server_id: ServerId) -> Result<Option<T>> {
-        if let Some(cached) = self
-            .cached_server_values
-            .get(&server_id)
-            .map(|v| v.value().clone())
+        let raw_value = match self
+            .bot
+            .db()
+            .get_server_setting(server_id, &format!("{}/{}", M::ID, self.name))
+            .await?
         {
-            Ok(Some(cached))
-        } else {
-            let raw_value = match self
-                .bot
-                .db()
-                .get_server_setting(server_id, &format!("{}/{}", M::ID, self.name))
-                .await?
-            {
-                Some(v) => v,
-                None => return Ok(None),
-            };
+            Some(v) => v,
+            None => return Ok(None),
+        };
 
-            // Just go back to default if the raw value is invalid
-            Ok(T::set_value(&raw_value, &self.parameters).ok())
-        }
+        // Just go back to default if the raw value is invalid
+        Ok(T::set_value(&raw_value, &self.parameters).ok())
     }
 
     pub async fn set_value(&self, ctx: SettingContext, input: &str) -> Result<()> {
-        let value = T::set_value(input, &self.parameters)?;
+        // Ensure the value is valid
+        let _value = T::set_value(input, &self.parameters)?;
 
         match ctx {
             SettingContext::Channel(channel_id) => {
@@ -174,14 +149,12 @@ where
                     .db()
                     .save_channel_setting(channel_id, &format!("{}/{}", M::ID, self.name), input)
                     .await?;
-                self.cached_channel_values.insert(channel_id, value)
             }
             SettingContext::Server(server_id) => {
                 self.bot
                     .db()
                     .save_server_setting(server_id, &format!("{}/{}", M::ID, self.name), input)
                     .await?;
-                self.cached_server_values.insert(server_id, value)
             }
         };
 
