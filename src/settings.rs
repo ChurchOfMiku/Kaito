@@ -34,6 +34,26 @@ macro_rules! settings {
                 }))
             }
         }
+
+        #[async_trait]
+        impl $crate::settings::Settings for $sname {
+            fn enumerate(&self) -> Vec<$crate::settings::SettingInfo> {
+                vec![
+                    $(
+                        self.$name.info()
+                    ),*
+                ]
+            }
+
+            async fn set_setting(&self, ctx: $crate::settings::SettingContext, setting: &str, value: &str) -> Result<()> {
+                match setting {
+                    $(
+                        stringify!($name) => self.$name.set_value(ctx, value).await,
+                    )*
+                    _ => Err(anyhow::anyhow!("unknown setting"))
+                }
+            }
+        }
     };
 }
 
@@ -83,6 +103,13 @@ where
             default,
             _phantom: PhantomData::default(),
         })
+    }
+
+    pub fn info(&self) -> SettingInfo {
+        SettingInfo {
+            name: self.name.clone(),
+            help: self.help.clone(),
+        }
     }
 
     pub async fn value(&self, server_id: ServerId, channel_id: ChannelId) -> Result<T> {
@@ -160,6 +187,18 @@ where
 
         Ok(())
     }
+}
+
+// struct used when listing all the settings, due to traits being too complex
+pub struct SettingInfo {
+    pub name: String,
+    pub help: String,
+}
+
+#[async_trait]
+pub trait Settings: Send + Sync {
+    fn enumerate(&self) -> Vec<SettingInfo>;
+    async fn set_setting(&self, ctx: SettingContext, setting: &str, value: &str) -> Result<()>;
 }
 
 pub trait SettingValue: Clone + Sized + Deserialize<'static> + Serialize {
@@ -248,7 +287,7 @@ pub enum SettingType {
 
 #[derive(Debug, Error)]
 pub enum SettingError {
-    #[error("unable to parse \"{}\" as {:?}", input, expected)]
+    #[error("unable to parse \"{}\" as {}", input, format!("{:?}", expected).to_lowercase())]
     UnexpectedInput {
         expected: SettingType,
         input: String,

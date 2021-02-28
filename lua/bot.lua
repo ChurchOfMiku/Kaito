@@ -6,8 +6,27 @@ include("./lib/async.lua")
 function bot.think()
 end
 
-function bot.add_command(cmd, options)
+local function get_abs_cmd(cmd)
+    if cmd._parent_cmd then
+        local t = cmd.cmd
+        local cmd = cmd._parent_cmd
+
+        while cmd do
+            t = cmd.cmd .. " " .. t
+            cmd = cmd._parent_cmd
+        end
+
+        return t
+    else
+        return cmd.cmd
+    end
+end
+
+local function create_command(cmd, options)
     options.cmd = cmd
+    options.sub_commands = options.sub_commands or {}
+    options._sub_commands = options._sub_commands or {}
+
     -- Needed for parsing and help
     options._arguments = {}
     options._options = {}
@@ -31,15 +50,35 @@ function bot.add_command(cmd, options)
         end
     end
 
-    bot.cmds[cmd] = options
+    for _,v in pairs(options.sub_commands) do
+        v._parent_cmd = options
+        options._sub_commands[v.cmd] = v
+    end
+
+    return options
+end
+
+function bot.add_command(cmd, options)
+    bot.cmds[cmd] = create_command(cmd, options)
+end
+
+function bot.sub_command(cmd, options)
+    return create_command(cmd, options)
+end
+
+function bot.icode_block(msg)
+    return msg.service == "discord" and "``" or ""
 end
 
 function bot.help(msg, cmd)
     local usage_options = ""
     local usage_arguments = ""
 
+    local icode_block = bot.icode_block(msg)
+
     local arguments = ""
     local options = ""
+    local sub_commands = ""
 
     if #(cmd._options) > 0 then
         usage_options = "[OPTIONS] "
@@ -47,21 +86,19 @@ function bot.help(msg, cmd)
         options = "\nOPTIONS:\n"
 
         local min_len = 0
-
         for _, v in ipairs(cmd._options) do
             local long = v.long and "--" .. v.long or ""
             min_len = math.max(min_len, #long)
         end
 
         local pad = min_len + 3
-
         for _, v in ipairs(cmd._options) do
             local long = v.long and "--" .. v.long or ""
             options =
                 options ..
-                "   " ..
-                    (v.short and "-" .. v.short .. (v.long and ",  " or "   ")) ..
-                        (long .. string.rep(" ", pad - #long)) .. v.description
+                "   " .. icode_block ..
+                    ((v.short and "-" or "") .. (v.short or "") .. (v.short and ",  " or "")) ..
+                        (long .. string.rep(" ", pad - #long)) .. v.description .. icode_block .. "\n"
         end
     end
 
@@ -70,9 +107,10 @@ function bot.help(msg, cmd)
 
         local min_len = 0
 
-        for _, v in ipairs(cmd._arguments) do
+        local len = #cmd._arguments
+        for k, v in ipairs(cmd._arguments) do
             local name = v.name or v.key
-            usage_arguments = usage_arguments .. "<" .. name .. "> "
+            usage_arguments = usage_arguments .. "<" .. name .. ">" .. (k ~= len and " " or "")
             min_len = math.max(min_len, #name)
         end
 
@@ -91,15 +129,38 @@ function bot.help(msg, cmd)
             end
 
             arguments =
-                arguments .. "   " .. name .. string.rep(" ", pad - #name) .. (v.description or "") .. extra .. "\n"
+                arguments .. "   " .. icode_block .. name .. string.rep(" ", pad - #name) .. (v.description or "") .. extra .. icode_block .. "\n"
+        end
+    end
+
+    if #(cmd.sub_commands) > 0 then
+        if usage_options ~= "" then
+            usage_options = usage_options .. " "
+        end
+
+        usage_options = usage_options .. "<SUBCOMMAND>"
+
+        sub_commands = "\n\nSUBCOMMANDS:\n"
+
+        local min_len = 0
+
+        for _, v in ipairs(cmd.sub_commands) do
+            min_len = math.max(min_len, #cmd.cmd)
+        end
+
+        local pad = min_len + 3
+
+        for _, v in ipairs(cmd.sub_commands) do
+            sub_commands =
+                sub_commands .. "   " .. icode_block .. v.cmd .. string.rep(" ", pad - #v.cmd) .. (v.description or "") .. icode_block .. "\n"
         end
     end
 
     local out =
-        cmd.cmd ..
+        get_abs_cmd(cmd) ..
         "\n" ..
             ((cmd.description and cmd.description .. "\n") or "") ..
-                "\n" .. "USAGE:\n   " .. cmd.cmd .. " " .. usage_options .. usage_arguments .. arguments .. options
+                "\n" .. "USAGE:\n   " .. icode_block .. get_abs_cmd(cmd) .. " " .. usage_options .. usage_arguments .. icode_block .. arguments .. options .. sub_commands
 
     msg:reply(out)
 end
@@ -129,6 +190,8 @@ function bot.parse_args(cmd, args)
 
             if opt.takes_value then
                 taking_opt_value = opt_name
+            else
+                out[opt.key] = true
             end
         elseif starts_with(arg, "-") then
             local opt_name = string.sub(arg, 2, 2)
@@ -194,11 +257,8 @@ function bot.has_role_or_higher(role, user_role, only_higher)
     return user_role_idx > role_idx
 end
 
-function bot.on_command(msg, args)
-    local cmd_name = args[1]
-    local args = {table.unpack(args, 2, #args)}
-
-    local cmd = bot.cmds[cmd_name]
+local function exec_command(msg, cmd, args)
+    local has_subcommands = #cmd.sub_commands > 0
 
     if not cmd then
         return
@@ -210,6 +270,23 @@ function bot.on_command(msg, args)
         end
     end
 
+    if has_subcommands then
+        local cmd_name = args[1]
+        local args = {table.unpack(args, 2, #args)}
+
+        if cmd_name then
+            local sub_cmd = cmd._sub_commands[cmd_name]
+
+            if sub_cmd then
+                return exec_command(msg, sub_cmd, args)
+            end
+        end
+
+        if not cmd.callback then
+            return bot.help(msg, cmd)
+        end
+    end
+
     if bot.utils.array_has_value(args, "--help") then
         return bot.help(msg, cmd)
     end
@@ -217,10 +294,23 @@ function bot.on_command(msg, args)
     local succ, res = bot.parse_args(cmd, args)
 
     if not succ then
-        return msg:reply("argument error: " .. res .. '\nUse "' .. cmd_name .. ' --help" for more info.')
+        return msg:reply("argument error: " .. res .. '\nUse "' .. get_abs_cmd(cmd) .. ' --help" for more info.')
     end
 
     cmd.callback(msg, res)
+end
+
+function bot.on_command(msg, args)
+    local cmd_name = args[1]
+    local args = {table.unpack(args, 2, #args)}
+
+    local cmd = bot.cmds[cmd_name]
+
+    if not cmd then
+        return
+    end
+
+    exec_command(msg, cmd, args)
 end
 
 include("bot/utils.lua")

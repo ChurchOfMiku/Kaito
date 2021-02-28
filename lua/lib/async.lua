@@ -23,7 +23,7 @@ function async.FutureMeta:thence(callback)
     if self.state == async.FUTURE_STATE.Pending then
         table.insert(self.callbacks, { type = async.CALLBACK_TYPE.Then, cb = callback })
     elseif self.state == async.FUTURE_STATE.Resolved then
-        callback(unpack(self.results))
+        callback(table.unpack(self.results))
     end
 
     return self
@@ -33,7 +33,7 @@ function async.FutureMeta:catch(callback)
     if self.state == async.FUTURE_STATE.Pending then
         table.insert(self.callbacks, { type = async.CALLBACK_TYPE.Catch, cb = callback })
     elseif self.state == async.FUTURE_STATE.Rejected then
-        callback(unpack(self.results))
+        callback(table.unpack(self.results))
     end
 
     return self
@@ -67,7 +67,7 @@ function async.FutureMeta:__handle_resolve(force, ...)
 
     while next_cb do
         if next_cb.type == async.CALLBACK_TYPE.Then then
-            local res = {pcall(next_cb.cb, unpack(last_res))}
+            local res = {pcall(next_cb.cb, table.unpack(last_res))}
             local succ = table.remove(res, 1)
 
             if succ then
@@ -86,7 +86,7 @@ function async.FutureMeta:__handle_resolve(force, ...)
                     last_res = res
                 end
             else
-                self:__handle_reject(true, unpack(res))
+                self:__handle_reject(true, table.unpack(res))
                 return
             end
         end
@@ -105,7 +105,7 @@ function async.FutureMeta:__handle_reject(force, ...)
 
     while next_cb do
         if next_cb.type == async.CALLBACK_TYPE.Catch then
-            local res = {pcall(next_cb.cb, unpack(last_res))}
+            local res = {pcall(next_cb.cb, table.unpack(last_res))}
             local succ = table.remove(res, 1)
 
             if succ then

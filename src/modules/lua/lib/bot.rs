@@ -7,7 +7,10 @@ use thiserror::Error;
 use super::{super::state::LuaAsyncCallback, r#async::create_future};
 use crate::{
     bot::{Bot, ROLES},
-    services::{Channel, ChannelId, Message, Service, ServiceKind, Services, User, UserId},
+    services::{
+        Channel, ChannelId, Message, Server, ServerId, Service, ServiceKind, Services, User, UserId,
+    },
+    settings::SettingContext,
 };
 
 pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) -> Result<()> {
@@ -175,6 +178,90 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
     })?;
     bot_tbl.set("unrestrict_user", unrestrict_user_fn)?;
 
+    let bot2 = bot.clone();
+    let list_settings_fn = state.create_function(move |state, (module,): (String,)| {
+        let bot = bot2.clone();
+
+        let module_settings = match bot.get_ctx().modules().get_settings(&module) {
+            Some(settings) => settings,
+            None => return Ok(LuaMultiValue::new()),
+        };
+
+        let tbl = state.create_table()?;
+
+        for (idx, info) in module_settings.enumerate().into_iter().enumerate() {
+            let info_tbl = state.create_table()?;
+
+            info_tbl.set("name", info.name)?;
+            info_tbl.set("help", info.help)?;
+
+            tbl.raw_insert((idx + 1) as i64, info_tbl)?;
+        }
+
+        Ok(LuaMultiValue::from_vec(vec![LuaValue::Table(tbl)]))
+    })?;
+    bot_tbl.set("list_settings", list_settings_fn)?;
+
+    let bot2 = bot.clone();
+    let sender2 = sender.clone();
+    let set_setting_fn = state.create_function(
+        move |state,
+              (msg, server, module, setting, value): (
+            LuaAnyUserData,
+            bool,
+            String,
+            String,
+            String,
+        )| {
+            let bot = bot2.clone();
+
+            let module_settings = match bot.get_ctx().modules().get_settings(&module) {
+                Some(settings) => settings,
+                None => {
+                    return Ok(LuaMultiValue::from_vec(vec![
+                        "unknown module".to_lua(state)?
+                    ]))
+                }
+            };
+
+            let msg = msg.borrow::<BotMessage>()?.clone();
+
+            let (future_reg_key, fut) = wrap_future!(state, create_future(state));
+
+            let sender = sender2.clone();
+            tokio::spawn(async move {
+                let res = module_settings
+                    .set_setting(
+                        if server {
+                            SettingContext::Server(msg.server_id())
+                        } else {
+                            SettingContext::Channel(msg.channel_id())
+                        },
+                        &setting,
+                        &value,
+                    )
+                    .await;
+
+                sender
+                    .send((
+                        future_reg_key,
+                        None,
+                        Box::new(move |_state| match &res {
+                            Ok(_) => Ok(LuaMultiValue::new()),
+                            Err(err) => Err(err.to_string()),
+                        }),
+                    ))
+                    .unwrap();
+            });
+
+            Ok(LuaMultiValue::from_vec(vec![
+                LuaValue::Nil,
+                LuaValue::Table(fut),
+            ]))
+        },
+    )?;
+    bot_tbl.set("set_setting", set_setting_fn)?;
+
     bot_tbl.set("ROLES", ROLES)?;
 
     state.globals().set("bot", bot_tbl)?;
@@ -182,10 +269,12 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
     Ok(())
 }
 
+#[derive(Clone)]
 pub struct BotMessage {
     bot: Arc<Bot>,
     user_id: UserId,
     channel_id: ChannelId,
+    server_id: ServerId,
     content: String,
     role: String,
     service: ServiceKind,
@@ -197,11 +286,13 @@ impl BotMessage {
         msg: &Arc<dyn Message<impl Service>>,
     ) -> Result<BotMessage> {
         let role = bot.db().get_role_for_user(msg.author().id()).await?;
+        let channel = msg.channel().await?;
 
         Ok(BotMessage {
             bot,
             user_id: msg.author().id(),
-            channel_id: msg.channel().await?.id(),
+            channel_id: channel.id(),
+            server_id: channel.server().await?.id(),
             content: msg.content().to_string(),
             role,
             service: msg.service().kind(),
@@ -210,6 +301,10 @@ impl BotMessage {
 
     pub fn channel_id(&self) -> ChannelId {
         self.channel_id
+    }
+
+    pub fn server_id(&self) -> ServerId {
+        self.server_id
     }
 }
 

@@ -8,6 +8,7 @@ use crate::{
     bot::Bot,
     config::Config,
     services::{ChannelId, Message, ServerId, Service},
+    settings::Settings,
 };
 
 macro_rules! modules_loader {
@@ -36,6 +37,15 @@ macro_rules! modules_loader {
                     }
                 )+
             }
+
+            pub fn get_settings(&self, name: &str) -> Option<Arc<dyn Settings>> {
+                match name {
+                    $(
+                        <$module>::ID => Some(self.$module_ident.module().settings().clone() as Arc<_>),
+                    ),+
+                    _ => None
+                }
+            }
         }
     };
     (__init, $module:ty, $bot:expr, $config:expr, ()) => {
@@ -53,7 +63,7 @@ pub trait Module: 'static + Send + Sync + Sized {
     const NAME: &'static str;
 
     type ModuleConfig: Clone + Deserialize<'static> + Serialize + std::fmt::Debug;
-    type ModuleSettings;
+    type ModuleSettings: Settings;
 
     async fn load(bot: Arc<Bot>, config: Self::ModuleConfig) -> Result<Arc<Self>>;
 
@@ -68,6 +78,8 @@ pub trait Module: 'static + Send + Sync + Sized {
     fn name(&self) -> &'static str {
         Self::NAME
     }
+
+    fn settings(&self) -> &Arc<Self::ModuleSettings>;
 }
 
 pub struct ModuleWrapper<M: Module> {
