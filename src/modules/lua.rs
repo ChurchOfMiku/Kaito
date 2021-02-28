@@ -31,6 +31,7 @@ pub struct LuaModule {
 
 settings! {
     LuaModuleSettings,
+    LuaModule,
     {
         enable: bool => (true, SettingFlags::SERVER_OVERRIDE, "Enable the lua module", []),
         prefix: String => ("&".into(), SettingFlags::empty(), "Set the message prefix for lua commands", [max_len => 8]),
@@ -42,12 +43,13 @@ settings! {
 #[async_trait]
 impl Module for LuaModule {
     const KIND: ModuleKind = ModuleKind::Lua;
+    const ID: &'static str = "lua";
     const NAME: &'static str = "Lua";
 
     type ModuleConfig = ();
     type ModuleSettings = LuaModuleSettings;
 
-    async fn load(bot: Arc<Bot>, _config: ()) -> Result<Arc<Self>> {
+    async fn load(bot: Arc<Bot>, _config: ()) -> Result<Arc<LuaModule>> {
         let bot_state = Arc::new(Mutex::new(LuaState::create_state(&bot, false)?));
         let sandbox_state = Arc::new(Mutex::new(LuaState::create_state(&bot, true)?));
 
@@ -68,8 +70,8 @@ impl Module for LuaModule {
         });
 
         Ok(Arc::new(LuaModule {
-            bot,
-            settings: LuaModuleSettings::create()?,
+            bot: bot.clone(),
+            settings: LuaModuleSettings::create(bot)?,
             bot_state,
             sandbox_state,
         }))

@@ -1,21 +1,25 @@
 use anyhow::Result;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
+use std::{marker::PhantomData, str::FromStr, sync::Arc};
 use thiserror::Error;
 
-use crate::services::{ChannelId, ServerId};
+use crate::{
+    bot::Bot,
+    modules::Module,
+    services::{ChannelId, ServerId},
+};
 
 macro_rules! settings {
-    ($sname:ident, { $($name:ident: $type:ty => ($default:expr, $flags:expr, $help:expr, [ $($setting_ident:ident => $setting_value:expr)* ])),* }) => {
+    ($sname:ident, $module:ident, { $($name:ident: $type:ty => ($default:expr, $flags:expr, $help:expr, [ $($setting_ident:ident => $setting_value:expr)* ])),* }) => {
         pub struct $sname {
             $(
-                pub $name: crate::settings::Setting<$type>,
+                pub $name: crate::settings::Setting<$type, $module>,
             )*
         }
 
         impl $sname {
-            pub fn create() -> Result<Arc<$sname>> {
+            pub fn create(bot: Arc<Bot>) -> Result<Arc<$sname>> {
                 $(
                     #[allow(unused, non_camel_case_types)]
                     type $name = <$type as SettingValue>::Parameters;
@@ -23,7 +27,7 @@ macro_rules! settings {
 
                 Ok(Arc::new($sname {
                     $(
-                        $name: Setting::create(stringify!($name).into(), $default, $name {
+                        $name: Setting::create(bot.clone(), stringify!($name).into(), $default, $name {
                             $($setting_ident: Some($setting_value),)*
                             ..Default::default()
                         }, $flags, $help.into())?,
@@ -40,11 +44,13 @@ bitflags! {
     }
 }
 
-pub struct Setting<T>
+pub struct Setting<T, M>
 where
     T: SettingValue + Send + Sync,
     T::Parameters: Send + Sync,
+    M: Module + Send + Sync,
 {
+    bot: Arc<Bot>,
     name: String,
     flags: SettingFlags,
     help: String,
@@ -52,23 +58,27 @@ where
     default: T,
     cached_channel_values: DashMap<ChannelId, T>,
     cached_server_values: DashMap<ServerId, T>,
+    _phantom: PhantomData<M>,
 }
 
-impl<T> Setting<T>
+impl<T, M> Setting<T, M>
 where
     T: SettingValue + Send + Sync,
     T::Parameters: Send + Sync,
+    M: Module + Send + Sync,
 {
     pub fn create(
+        bot: Arc<Bot>,
         name: &str,
         default: T,
         parameters: T::Parameters,
         flags: SettingFlags,
         help: String,
-    ) -> Result<Setting<T>> {
+    ) -> Result<Setting<T, M>> {
         SettingValue::is_valid(&default, &parameters)?;
 
         Ok(Setting {
+            bot,
             name: name.to_string(),
             parameters: parameters,
             flags,
@@ -76,6 +86,7 @@ where
             default,
             cached_channel_values: DashMap::new(),
             cached_server_values: DashMap::new(),
+            _phantom: PhantomData::default(),
         })
     }
 
@@ -116,8 +127,18 @@ where
         {
             Ok(Some(cached))
         } else {
-            // TODO: Read DB
-            Ok(None)
+            let raw_value = match self
+                .bot
+                .db()
+                .get_channel_setting(channel_id, &format!("{}/{}", M::ID, self.name))
+                .await?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            };
+
+            // Just go back to default if the raw value is invalid
+            Ok(T::set_value(&raw_value, &self.parameters).ok())
         }
     }
 
@@ -129,21 +150,39 @@ where
         {
             Ok(Some(cached))
         } else {
-            // TODO: Read DB
-            Ok(None)
+            let raw_value = match self
+                .bot
+                .db()
+                .get_server_setting(server_id, &format!("{}/{}", M::ID, self.name))
+                .await?
+            {
+                Some(v) => v,
+                None => return Ok(None),
+            };
+
+            // Just go back to default if the raw value is invalid
+            Ok(T::set_value(&raw_value, &self.parameters).ok())
         }
     }
 
-    pub fn set_value(&self, ctx: SettingContext, input: &str) -> Result<()> {
+    pub async fn set_value(&self, ctx: SettingContext, input: &str) -> Result<()> {
         let value = T::set_value(input, &self.parameters)?;
-
-        // TODO: Insert to DB
 
         match ctx {
             SettingContext::Channel(channel_id) => {
+                self.bot
+                    .db()
+                    .save_channel_setting(channel_id, &format!("{}/{}", M::ID, self.name), input)
+                    .await?;
                 self.cached_channel_values.insert(channel_id, value)
             }
-            SettingContext::Server(server_id) => self.cached_server_values.insert(server_id, value),
+            SettingContext::Server(server_id) => {
+                self.bot
+                    .db()
+                    .save_server_setting(server_id, &format!("{}/{}", M::ID, self.name), input)
+                    .await?;
+                self.cached_server_values.insert(server_id, value)
+            }
         };
 
         Ok(())

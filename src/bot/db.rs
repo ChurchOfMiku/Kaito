@@ -7,7 +7,10 @@ use sqlx::{
 use std::{path::Path, sync::Arc};
 
 use super::{DEFAULT_ROLE, ROLES};
-use crate::{config::Config, services::UserId};
+use crate::{
+    config::Config,
+    services::{ChannelId, ServerId, UserId},
+};
 
 pub struct BotDb {
     pool: Pool<Sqlite>,
@@ -109,6 +112,80 @@ impl BotDb {
             })?;
 
         Ok(restricted)
+    }
+
+    pub async fn get_channel_setting(
+        &self,
+        channel_id: ChannelId,
+        key: &str,
+    ) -> Result<Option<String>> {
+        sqlx::query_as("SELECT value FROM settings_channel WHERE channel_id = ? AND key = ?")
+            .bind(channel_id.to_short_str())
+            .bind(key)
+            .fetch_one(self.pool())
+            .await
+            .map(|val: (String,)| Some(val.0))
+            .or_else(|err| match err {
+                sqlx::Error::RowNotFound => Ok(None),
+                _ => Err(err.into()),
+            })
+    }
+
+    pub async fn save_channel_setting(
+        &self,
+        channel_id: ChannelId,
+        key: &str,
+        value: &str,
+    ) -> Result<()> {
+        self.pool()
+            .execute(
+                sqlx::query(
+                    "REPLACE INTO settings_channel ( channel_id, key, value ) VALUES ( ?, ?, ? )",
+                )
+                .bind(channel_id.to_short_str())
+                .bind(key)
+                .bind(value),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_server_setting(
+        &self,
+        server_id: ServerId,
+        key: &str,
+    ) -> Result<Option<String>> {
+        sqlx::query_as("SELECT value FROM settings_server WHERE server_id = ? AND key = ?")
+            .bind(server_id.to_short_str())
+            .bind(key)
+            .fetch_one(self.pool())
+            .await
+            .map(|val: (String,)| Some(val.0))
+            .or_else(|err| match err {
+                sqlx::Error::RowNotFound => Ok(None),
+                _ => Err(err.into()),
+            })
+    }
+
+    pub async fn save_server_setting(
+        &self,
+        server_id: ServerId,
+        key: &str,
+        value: &str,
+    ) -> Result<()> {
+        self.pool()
+            .execute(
+                sqlx::query(
+                    "REPLACE INTO settings_server ( server_id, key, value ) VALUES ( ?, ?, ? )",
+                )
+                .bind(server_id.to_short_str())
+                .bind(key)
+                .bind(value),
+            )
+            .await?;
+
+        Ok(())
     }
 
     pub fn pool(&self) -> &Pool<Sqlite> {

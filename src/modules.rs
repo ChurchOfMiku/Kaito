@@ -49,6 +49,7 @@ macro_rules! modules_loader {
 #[async_trait]
 pub trait Module: 'static + Send + Sync + Sized {
     const KIND: ModuleKind;
+    const ID: &'static str;
     const NAME: &'static str;
 
     type ModuleConfig: Clone + Deserialize<'static> + Serialize + std::fmt::Debug;
