@@ -4,7 +4,7 @@ use mlua::{prelude::*, Error as LuaError, Lua, MetaMethod, UserData, UserDataMet
 use std::sync::Arc;
 use thiserror::Error;
 
-use super::{super::state::LuaAsyncCallback, r#async::create_future};
+use super::super::state::LuaAsyncCallback;
 use crate::{
     bot::{Bot, ROLES},
     services::{
@@ -17,15 +17,23 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
     let bot_tbl = state.create_table()?;
 
     let bot2 = bot.clone();
-    let bot_restart_sandbox_fn = state.create_function(move |_, (): ()| {
+    let sender2 = sender.clone();
+    let bot_restart_sandbox_fn = state.create_function(move |state, (): ()| {
         let ctx = bot2.get_ctx();
-        tokio::spawn(async move {
-            if let Err(err) = ctx.modules().lua.module().restart_sandbox().await {
-                println!("error restarting sandbox: {}", err.to_string());
-            }
-        });
 
-        Ok(())
+        let fut = create_lua_future!(
+            state,
+            sender2,
+            (),
+            async move {
+                if let Err(err) = ctx.modules().lua.module().restart_sandbox().await {
+                    println!("error restarting sandbox: {}", err.to_string());
+                }
+            },
+            |_state, _data: (), _res: ()| { Ok(()) }
+        );
+
+        Ok(fut)
     })?;
     bot_tbl.set("restart_sandbox", bot_restart_sandbox_fn)?;
 
@@ -43,43 +51,35 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
             }
         };
 
-        let (future_reg_key, fut) = wrap_future!(state, create_future(state));
-
-        let sender = sender2.clone();
-        tokio::spawn(async move {
-            let res = match ctx.services().find_user(service, &user).await {
-                Ok(user) => match ctx.bot().db().get_role_for_user(user.id()).await {
-                    Ok(role) => ctx
-                        .bot()
-                        .db()
-                        .is_restricted(user.id())
-                        .await
-                        .map(|restricted| (user, role, restricted)),
+        let fut = create_lua_future!(
+            state,
+            sender2,
+            (),
+            async move {
+                match ctx.services().find_user(service, &user).await {
+                    Ok(user) => match ctx.bot().db().get_role_for_user(user.id()).await {
+                        Ok(role) => ctx
+                            .bot()
+                            .db()
+                            .is_restricted(user.id())
+                            .await
+                            .map(|restricted| (user, role, restricted)),
+                        Err(err) => Err(err),
+                    },
                     Err(err) => Err(err),
-                },
-                Err(err) => Err(err),
-            };
+                }
+            },
+            |_state, _data: (), res: Result<(Arc<dyn User<impl Service>>, String, bool)>| {
+                let (user, role, restricted): (Arc<dyn User<_>>, _, _) = res?;
 
-            sender
-                .send((
-                    future_reg_key,
-                    None,
-                    Box::new(move |state| match &res {
-                        Ok((user, role, restricted)) => {
-                            Ok(LuaMultiValue::from_vec(vec![BotUser {
-                                user_id: user.id(),
-                                name: user.name().to_string(),
-                                role: role.to_string(),
-                                restricted: *restricted,
-                            }
-                            .to_lua(state)
-                            .map_err(|e| e.to_string())?]))
-                        }
-                        Err(err) => Err(err.to_string()),
-                    }),
-                ))
-                .unwrap();
-        });
+                Ok(BotUser {
+                    user_id: user.id(),
+                    name: user.name().to_string(),
+                    role,
+                    restricted,
+                })
+            }
+        );
 
         Ok(fut)
     })?;
@@ -93,23 +93,13 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
 
             let user = user.borrow::<BotUser>()?.clone();
 
-            let (future_reg_key, fut) = wrap_future!(state, create_future(state));
-
-            let sender = sender2.clone();
-            tokio::spawn(async move {
-                let res = bot.db().set_role_for_user(user.user_id, &role).await;
-
-                sender
-                    .send((
-                        future_reg_key,
-                        None,
-                        Box::new(move |_state| match &res {
-                            Ok(_) => Ok(LuaMultiValue::new()),
-                            Err(err) => Err(err.to_string()),
-                        }),
-                    ))
-                    .unwrap();
-            });
+            let fut = create_lua_future!(
+                state,
+                sender2,
+                (),
+                bot.db().set_role_for_user(user.user_id, &role),
+                |_state, _data: (), res: Result<()>| { res }
+            );
 
             Ok(fut)
         })?;
@@ -126,23 +116,13 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
                 LuaError::ExternalError(Arc::new(BotError::InvalidUserId(restrictor_id)))
             })?;
 
-            let (future_reg_key, fut) = wrap_future!(state, create_future(state));
-
-            let sender = sender2.clone();
-            tokio::spawn(async move {
-                let res = bot.db().restrict_user(user.user_id, restrictor_id).await;
-
-                sender
-                    .send((
-                        future_reg_key,
-                        None,
-                        Box::new(move |_state| match &res {
-                            Ok(_) => Ok(LuaMultiValue::new()),
-                            Err(err) => Err(err.to_string()),
-                        }),
-                    ))
-                    .unwrap();
-            });
+            let fut = create_lua_future!(
+                state,
+                sender2,
+                (),
+                bot.db().restrict_user(user.user_id, restrictor_id),
+                |_state, _data: (), res: Result<()>| { res }
+            );
 
             Ok(fut)
         },
@@ -156,23 +136,13 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
 
         let user = user.borrow::<BotUser>()?.clone();
 
-        let (future_reg_key, fut) = wrap_future!(state, create_future(state));
-
-        let sender = sender2.clone();
-        tokio::spawn(async move {
-            let res = bot.db().unrestrict_user(user.user_id).await;
-
-            sender
-                .send((
-                    future_reg_key,
-                    None,
-                    Box::new(move |_state| match &res {
-                        Ok(_) => Ok(LuaMultiValue::new()),
-                        Err(err) => Err(err.to_string()),
-                    }),
-                ))
-                .unwrap();
-        });
+        let fut = create_lua_future!(
+            state,
+            sender2,
+            (),
+            bot.db().unrestrict_user(user.user_id),
+            |_state, _data: (), res: Result<()>| { res }
+        );
 
         Ok(fut)
     })?;
@@ -203,7 +173,6 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
     bot_tbl.set("list_settings", list_settings_fn)?;
 
     let bot2 = bot.clone();
-    let sender2 = sender.clone();
     let set_setting_fn = state.create_function(
         move |state,
               (msg, server, module, setting, value): (
@@ -226,33 +195,21 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
 
             let msg = msg.borrow::<BotMessage>()?.clone();
 
-            let (future_reg_key, fut) = wrap_future!(state, create_future(state));
-
-            let sender = sender2.clone();
-            tokio::spawn(async move {
-                let res = module_settings
-                    .set_setting(
-                        if server {
-                            SettingContext::Server(msg.server_id())
-                        } else {
-                            SettingContext::Channel(msg.channel_id())
-                        },
-                        &setting,
-                        &value,
-                    )
-                    .await;
-
-                sender
-                    .send((
-                        future_reg_key,
-                        None,
-                        Box::new(move |_state| match &res {
-                            Ok(_) => Ok(LuaMultiValue::new()),
-                            Err(err) => Err(err.to_string()),
-                        }),
-                    ))
-                    .unwrap();
-            });
+            let fut = create_lua_future!(
+                state,
+                sender,
+                (),
+                module_settings.set_setting(
+                    if server {
+                        SettingContext::Server(msg.server_id())
+                    } else {
+                        SettingContext::Channel(msg.channel_id())
+                    },
+                    &setting,
+                    &value,
+                ),
+                |_state, _data: (), res: Result<()>| { res }
+            );
 
             Ok(LuaMultiValue::from_vec(vec![
                 LuaValue::Nil,

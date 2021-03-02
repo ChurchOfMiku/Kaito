@@ -1,8 +1,8 @@
 use futures::TryStreamExt;
-use hyper::{Body, Client, Request};
+use hyper::{Body, Client, Request, Response};
 use hyper_tls::HttpsConnector;
 use mlua::{
-    prelude::{LuaError, LuaMultiValue, LuaTable, LuaValue},
+    prelude::{LuaError, LuaMultiValue, LuaTable},
     Lua,
 };
 use std::{
@@ -11,13 +11,7 @@ use std::{
 };
 use thiserror::Error;
 
-use super::{lib::r#async::create_future, state::SandboxState};
-
-macro_rules! lua_error {
-    ($res:expr) => {
-        $res.map_err(|err| err.to_string())?;
-    };
-}
+use super::state::SandboxState;
 
 pub fn http_fetch<'a>(
     state: &'a Lua,
@@ -111,70 +105,58 @@ pub fn http_fetch<'a>(
         }
     };
 
-    let req_fut = client.request(req);
-
-    let (future_reg_key, fut) = wrap_future!(state, create_future(state));
-
     let http_rate_limiter = sandbox_state.0.http_rate_limiter.clone();
     let sender = sandbox_state.0.async_sender.clone();
-    let sandbox_state = SandboxState(sandbox_state.0.clone());
 
-    tokio::spawn(async move {
-        // Rate limit how often http calls can be made
-        http_rate_limiter.until_ready().await;
+    let fut = create_lua_future!(
+        state,
+        sender,
+        (url,),
+        async move {
+            // Rate limit how often http calls can be made
+            http_rate_limiter.until_ready().await;
 
-        let res = req_fut.await;
+            match client.request(req).await {
+                Ok(mut res) => {
+                    let body = res
+                        .body_mut()
+                        .try_fold(Vec::new(), |mut data, chunk| async move {
+                            data.extend_from_slice(&chunk);
+                            Ok(data)
+                        })
+                        .await
+                        .unwrap_or_default();
 
-        match res {
-            Ok(mut res) => {
-                let body = res
-                    .body_mut()
-                    .try_fold(Vec::new(), |mut data, chunk| async move {
-                        data.extend_from_slice(&chunk);
-                        Ok(data)
-                    })
-                    .await
-                    .unwrap_or_default();
-
-                sender
-                    .send((
-                        future_reg_key,
-                        Some(sandbox_state),
-                        Box::new(move |state| {
-                            let tbl: LuaTable = lua_error!(state.create_table());
-                            let headers_tbl: LuaTable = lua_error!(state.create_table());
-
-                            for (header_name, header_value) in res.headers() {
-                                lua_error!(headers_tbl.set(
-                                    header_name.as_str(),
-                                    lua_error!(state.create_string(&header_value.as_bytes()))
-                                ));
-                            }
-
-                            lua_error!(tbl.set("headers", headers_tbl));
-                            lua_error!(tbl.set("ok", res.status().is_success()));
-                            lua_error!(tbl.set("redirected", res.status().is_redirection()));
-                            lua_error!(tbl.set("status", res.status().as_u16()));
-                            lua_error!(tbl.set("statusText", res.status().canonical_reason()));
-                            lua_error!(tbl.set("url", lua_error!(state.create_string(&url))));
-                            lua_error!(tbl.set("body", lua_error!(state.create_string(&body))));
-
-                            Ok(LuaMultiValue::from_vec(vec![LuaValue::Table(tbl)]))
-                        }),
-                    ))
-                    .unwrap();
+                    Ok((res, body))
+                }
+                Err(err) => Err(err),
             }
-            Err(err) => {
-                sender
-                    .send((
-                        future_reg_key,
-                        Some(sandbox_state),
-                        Box::new(move |_state| Err(err.to_string())),
-                    ))
-                    .unwrap();
+        },
+        |state, data: (String,), res: Result<(Response<Body>, Vec<u8>), hyper::Error>| {
+            let (res, body) = res?;
+            let (url,) = data;
+
+            let tbl: LuaTable = state.create_table()?;
+            let headers_tbl: LuaTable = state.create_table()?;
+
+            for (header_name, header_value) in res.headers() {
+                headers_tbl.set(
+                    header_name.as_str(),
+                    state.create_string(&header_value.as_bytes())?,
+                )?;
             }
+
+            tbl.set("headers", headers_tbl)?;
+            tbl.set("ok", res.status().is_success())?;
+            tbl.set("redirected", res.status().is_redirection())?;
+            tbl.set("status", res.status().as_u16())?;
+            tbl.set("statusText", res.status().canonical_reason())?;
+            tbl.set("url", state.create_string(&url)?)?;
+            tbl.set("body", state.create_string(&body)?)?;
+
+            Ok(tbl)
         }
-    });
+    );
 
     Ok(fut)
 }

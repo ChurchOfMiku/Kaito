@@ -30,7 +30,7 @@ use crate::{bot::Bot, services::ChannelId, utils::escape_untrusted_text};
 pub type LuaAsyncCallback = (
     RegistryKey,
     Option<SandboxState>,
-    Box<dyn Fn(&Lua) -> Result<LuaMultiValue, String> + Send>,
+    Box<dyn FnOnce(&Lua) -> Result<LuaMultiValue> + Send>,
 );
 
 macro_rules! atomic_get_set {
@@ -212,7 +212,7 @@ impl LuaState {
                         Err(err) => (
                             false,
                             LuaMultiValue::from_vec(vec![LuaValue::String(
-                                self.inner.create_string(&err)?,
+                                self.inner.create_string(&err.to_string())?,
                             )]),
                         ),
                     };

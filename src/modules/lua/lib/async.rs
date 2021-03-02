@@ -19,17 +19,51 @@ pub fn create_future(state: &Lua) -> Result<(RegistryKey, Table)> {
     Ok((fut_reg_key, fut))
 }
 
-macro_rules! wrap_future {
-    ($state:expr, $fut:expr) => {
-        match $fut {
+macro_rules! create_lua_future {
+    ($state:expr, $sender:expr, $data:expr, $fut:expr, |$state_ident:ident, $data_ident:ident: $data_ty:ty, $res:ident: $res_ty:ty| $closure:block) => {{
+        use mlua::ToLuaMulti;
+
+        let (future_reg_key, fut) = match $crate::modules::lua::lib::r#async::create_future($state)
+        {
             Ok(a) => a,
             Err(err) => {
                 return Err(LuaError::ExternalError(Arc::new(
                     $crate::modules::lua::lib::r#async::AsyncError::FutureError(err.to_string()),
                 )))
             }
-        }
-    };
+        };
+
+        let sandbox_state = $state.named_registry_value("__SANDBOX_STATE").ok().clone();
+
+        let sender = $sender.clone();
+        let data = $data.clone();
+        tokio::spawn(async move {
+            let fut_res = $fut.await;
+
+            let callback: Box<dyn for<'c> FnOnce(&'c Lua) -> anyhow::Result<LuaMultiValue<'c>> + Send> = Box::new(move |state| {
+                #[allow(unused_parens)]
+                //let closure: Box<dyn for<'c> FnOnce(&'c Lua, _, _) -> anyhow::Result<_> + Send> = Box::new($closure);
+                //let lua_res = closure(state, data, fut_res);
+
+                fn lua_callback<'a>($state_ident: &'a Lua, $data_ident: $data_ty, $res: $res_ty) -> anyhow::Result<impl ToLuaMulti<'a>> $closure
+
+                match lua_callback(state, data, fut_res) {
+                    Ok(data) => Ok(data.to_lua_multi(state)?),
+                    Err(err) => Err(err),
+                }
+            });
+
+            sender
+                .send((
+                    future_reg_key,
+                    sandbox_state,
+                    callback,
+                ))
+                .unwrap();
+        });
+
+        fut
+    }};
 }
 
 pub fn lib_async(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
@@ -37,8 +71,6 @@ pub fn lib_async(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
 
     // async.delay
     let async_delay = state.create_function(move |state, duration: f64| {
-        let (future_reg_key, fut) = wrap_future!(state, create_future(state));
-
         if duration.is_sign_negative() || !duration.is_finite() {
             return Err(LuaError::ExternalError(Arc::new(
                 AsyncError::InvalidDuration,
@@ -47,20 +79,13 @@ pub fn lib_async(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
 
         let duration = Duration::from_secs_f64(duration);
 
-        let sandbox_state = state.named_registry_value("__SANDBOX_STATE").ok().clone();
-
-        let sender = sender.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(duration).await;
-
-            sender
-                .send((
-                    future_reg_key,
-                    sandbox_state,
-                    Box::new(|_state| Ok(LuaMultiValue::new())),
-                ))
-                .unwrap();
-        });
+        let fut = create_lua_future!(
+            state,
+            sender,
+            (),
+            tokio::time::sleep(duration),
+            |_state, _data: (), _res: ()| { Ok(()) }
+        );
 
         Ok(fut)
     })?;
