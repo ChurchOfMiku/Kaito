@@ -1,8 +1,3 @@
-CREATE TABLE roles (
-    user_id TEXT PRIMARY KEY,
-    role TEXT NOT NULL
-);
-
 CREATE TABLE settings_server (
     server_id TEXT NOT NULL,
     key TEXT NOT NULL,

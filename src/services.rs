@@ -7,7 +7,7 @@ pub mod discord;
 use crate::{bot::Bot, config::ConfigServices, message::ToMessageContent};
 
 macro_rules! service_id_functions {
-    ($id:ident, $(($service_module_ident:ident, $service:ty)),+) => {
+    ($id:ident, $service_id:ident, $(($service_module_ident:ident, $service:ty)),+) => {
         #[allow(dead_code)]
         impl $id {
             pub fn to_str(&self) -> String {
@@ -30,7 +30,7 @@ macro_rules! service_id_functions {
                     match before {
                         $(
                             <$service as Service>::ID | <$service as Service>::ID_SHORT => {
-                                let id = <$service as Service>::$id::from_str(after)?;
+                                let id = <$service as Service>::$service_id::from_str(after)?;
                                 return Ok($id::$service_module_ident(id));
                             },
                         ),+
@@ -145,21 +145,21 @@ macro_rules! services {
             $($service_module_ident (<$service as Service>::ChannelId)),+
         }
 
-        service_id_functions!{ChannelId, $(($service_module_ident, $service)),+}
+        service_id_functions!{ChannelId, ChannelId, $(($service_module_ident, $service)),+}
 
         #[derive(Copy, Clone, Hash, Eq, PartialEq)]
         pub enum ServerId {
             $($service_module_ident (<$service as Service>::ServerId)),+
         }
 
-        service_id_functions!{ServerId, $(($service_module_ident, $service)),+}
+        service_id_functions!{ServerId, ServerId, $(($service_module_ident, $service)),+}
 
         #[derive(Copy, Clone, Hash, Eq, PartialEq)]
-        pub enum UserId {
+        pub enum ServiceUserId {
             $($service_module_ident (<$service as Service>::UserId)),+
         }
 
-        service_id_functions!{UserId, $(($service_module_ident, $service)),+}
+        service_id_functions!{ServiceUserId, UserId, $(($service_module_ident, $service)),+}
 
         #[derive(Copy, Clone, Hash, PartialEq)]
         pub enum ServiceKind {
@@ -225,7 +225,7 @@ pub trait Message<S: Service>: Send + Sync {
 }
 
 pub trait User<S: Service>: Send + Sync {
-    fn id(&self) -> UserId;
+    fn id(&self) -> ServiceUserId;
     fn name(&self) -> &str;
     fn avatar(&self) -> &Option<String> {
         &None

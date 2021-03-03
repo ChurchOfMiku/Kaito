@@ -41,10 +41,6 @@ macro_rules! create_lua_future {
             let fut_res = $fut.await;
 
             let callback: Box<dyn for<'c> FnOnce(&'c Lua) -> anyhow::Result<LuaMultiValue<'c>> + Send> = Box::new(move |state| {
-                #[allow(unused_parens)]
-                //let closure: Box<dyn for<'c> FnOnce(&'c Lua, _, _) -> anyhow::Result<_> + Send> = Box::new($closure);
-                //let lua_res = closure(state, data, fut_res);
-
                 fn lua_callback<'a>($state_ident: &'a Lua, $data_ident: $data_ty, $res: $res_ty) -> anyhow::Result<impl ToLuaMulti<'a>> $closure
 
                 match lua_callback(state, data, fut_res) {

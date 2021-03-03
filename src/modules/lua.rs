@@ -85,7 +85,13 @@ impl Module for LuaModule {
             return Ok(());
         }
 
-        if self.bot.db().is_restricted(msg.author().id()).await? {
+        let user = self
+            .bot
+            .db()
+            .get_user_from_service_user_id(msg.author().id())
+            .await?;
+
+        if self.bot.db().is_restricted(user.uid).await? {
             return Ok(());
         }
 
