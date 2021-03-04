@@ -12,7 +12,7 @@ bot.add_command("restrict", {
         local user = bot.find_user(msg.service, args.user):await()
 
 
-        if msg.user_uid == user.uid then
+        if msg.author.uid == user.uid then
             return msg:reply("error: cannot restrict yourself")
         end
 
@@ -20,7 +20,7 @@ bot.add_command("restrict", {
             return msg:reply("error: no user was found")
         end
 
-        if not bot.has_role_or_higher(user.role, msg.role, true) then
+        if not bot.has_role_or_higher(user.role, msg.author.role, true) then
             return msg:reply("error: cannot restrict someone with a higher role")
         end
 
@@ -28,7 +28,7 @@ bot.add_command("restrict", {
             bot.unrestrict_user(user)
             msg:reply("unrestricted " .. user.name)
         else
-            bot.restrict_user(user, msg):await()
+            bot.restrict_user(user, msg.author):await()
             msg:reply("restricted " .. user.name)
         end
     end,

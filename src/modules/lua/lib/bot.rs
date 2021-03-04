@@ -6,10 +6,12 @@ use thiserror::Error;
 
 use super::super::state::LuaAsyncCallback;
 use crate::{
-    bot::{db::User as DbUser, Bot, ROLES},
+    bot::{
+        db::{User as DbUser, UserId},
+        Bot, ROLES,
+    },
     services::{
-        Channel, ChannelId, Message, Server, ServerId, Service, ServiceKind, ServiceUserId,
-        Services, User,
+        Channel, ChannelId, Message, Server, ServerId, Service, ServiceKind, Services, User,
     },
     settings::SettingContext,
 };
@@ -78,11 +80,13 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
             |_state, _data: (), res: Result<(Arc<dyn User<impl Service>>, DbUser, bool)>| {
                 let (service_user, user, restricted): (Arc<dyn User<_>>, _, _) = res?;
 
-                Ok(BotUser {
-                    name: service_user.name().to_string(),
-                    user,
-                    restricted,
-                })
+                Ok(BotUser(
+                    Arc::new(BotUserInner {
+                        name: service_user.name().to_string(),
+                        restricted,
+                    }),
+                    Arc::new(user),
+                ))
             }
         );
 
@@ -102,7 +106,7 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
                 state,
                 sender2,
                 (),
-                bot.db().set_role_for_user(user.user.uid, &role),
+                bot.db().set_role_for_user(user.uid(), &role),
                 |_state, _data: (), res: Result<()>| { res }
             );
 
@@ -117,14 +121,13 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
             let bot = bot2.clone();
 
             let user = user.borrow::<BotUser>()?.clone();
-            let restrictor_msg = restrictor.borrow::<BotMessage>()?.clone();
+            let restrictor = restrictor.borrow::<BotUser>()?.clone();
 
             let fut = create_lua_future!(
                 state,
                 sender2,
                 (),
-                bot.db()
-                    .restrict_user(user.user.uid, restrictor_msg.user.uid),
+                bot.db().restrict_user(user.uid(), restrictor.uid()),
                 |_state, _data: (), res: Result<()>| { res }
             );
 
@@ -144,7 +147,7 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
             state,
             sender2,
             (),
-            bot.db().unrestrict_user(user.user.uid),
+            bot.db().unrestrict_user(user.uid()),
             |_state, _data: (), res: Result<()>| { res }
         );
 
@@ -231,13 +234,14 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
 }
 
 #[derive(Clone)]
-pub struct BotMessage {
+pub struct BotMessage(Arc<BotMessageInner>);
+
+pub struct BotMessageInner {
     bot: Arc<Bot>,
-    user_id: ServiceUserId,
+    author: BotUser,
     channel_id: ChannelId,
     server_id: ServerId,
     content: String,
-    user: DbUser,
     service: ServiceKind,
 }
 
@@ -250,33 +254,40 @@ impl BotMessage {
             .db()
             .get_user_from_service_user_id(msg.author().id())
             .await?;
+        let restricted = bot.db().is_restricted(user.uid).await?;
+
         let channel = msg.channel().await?;
 
-        Ok(BotMessage {
+        Ok(BotMessage(Arc::new(BotMessageInner {
             bot,
-            user_id: msg.author().id(),
+            author: BotUser(
+                Arc::new(BotUserInner {
+                    name: msg.author().name().to_string(),
+                    restricted,
+                }),
+                Arc::new(user),
+            ),
             channel_id: channel.id(),
             server_id: channel.server().await?.id(),
             content: msg.content().to_string(),
-            user,
             service: msg.service().kind(),
-        })
+        })))
     }
 
     pub fn channel_id(&self) -> ChannelId {
-        self.channel_id
+        self.0.channel_id
     }
 
     pub fn server_id(&self) -> ServerId {
-        self.server_id
+        self.0.server_id
     }
 }
 
 impl UserData for BotMessage {
     fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
         methods.add_method("reply", |_state, msg, content: String| {
-            let ctx = msg.bot.get_ctx();
-            let channel_id = msg.channel_id;
+            let ctx = msg.0.bot.get_ctx();
+            let channel_id = msg.0.channel_id;
 
             tokio::spawn(async move {
                 ctx.services()
@@ -291,18 +302,14 @@ impl UserData for BotMessage {
 
         methods.add_meta_method(MetaMethod::Index, |state, msg, index: String| {
             match index.as_str() {
-                "user_uid" => Ok(mlua::Value::Number(msg.user.uid as f64)),
+                "author" => Ok(mlua::Value::UserData(
+                    state.create_userdata(msg.0.author.clone())?,
+                )),
                 "content" => Ok(mlua::Value::String(
-                    state.create_string(msg.content.as_bytes())?,
-                )),
-                "user_id" => Ok(mlua::Value::String(
-                    state.create_string(msg.user_id.to_short_str().as_bytes())?,
-                )),
-                "role" => Ok(mlua::Value::String(
-                    state.create_string(msg.user.role.as_bytes())?,
+                    state.create_string(msg.0.content.as_bytes())?,
                 )),
                 "service" => Ok(mlua::Value::String(
-                    state.create_string(Services::id_from_kind(msg.service).as_bytes())?,
+                    state.create_string(Services::id_from_kind(msg.0.service).as_bytes())?,
                 )),
                 _ => Ok(mlua::Value::Nil),
             }
@@ -311,9 +318,16 @@ impl UserData for BotMessage {
 }
 
 #[derive(Clone)]
-pub struct BotUser {
+pub struct BotUser(Arc<BotUserInner>, Arc<DbUser>);
+
+impl BotUser {
+    pub fn uid(&self) -> UserId {
+        self.1.uid
+    }
+}
+
+pub struct BotUserInner {
     name: String,
-    user: DbUser,
     restricted: bool,
 }
 
@@ -322,14 +336,14 @@ impl UserData for BotUser {
         methods.add_meta_method(
             MetaMethod::Index,
             |state, user, index: String| match index.as_str() {
-                "uid" => Ok(mlua::Value::Number(user.user.uid as f64)),
+                "uid" => Ok(mlua::Value::Number(user.1.uid as f64)),
                 "name" => Ok(mlua::Value::String(
-                    state.create_string(user.name.as_bytes())?,
+                    state.create_string(user.0.name.as_bytes())?,
                 )),
                 "role" => Ok(mlua::Value::String(
-                    state.create_string(user.user.role.as_bytes())?,
+                    state.create_string(user.1.role.as_bytes())?,
                 )),
-                "restricted" => Ok(mlua::Value::Boolean(user.restricted)),
+                "restricted" => Ok(mlua::Value::Boolean(user.0.restricted)),
                 _ => Ok(mlua::Value::Nil),
             },
         );

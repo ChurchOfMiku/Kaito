@@ -265,7 +265,7 @@ local function exec_command(msg, cmd, args)
     end
 
     if cmd.role then
-        if not bot.has_role_or_higher(cmd.role, msg.role) then
+        if not bot.has_role_or_higher(cmd.role, msg.author.role) then
             return msg:reply("permission denied: this command requires the role of  " .. cmd.role .. " or higher.")
         end
     end

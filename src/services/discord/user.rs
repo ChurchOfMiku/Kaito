@@ -7,11 +7,16 @@ use crate::services::{ServiceUserId, User};
 pub struct DiscordUser {
     user: user::User,
     service: Arc<DiscordService>,
+    name: String,
 }
 
 impl DiscordUser {
     pub fn new(user: user::User, service: Arc<DiscordService>) -> DiscordUser {
-        DiscordUser { user, service }
+        DiscordUser {
+            name: format!("{}#{}", user.name, user.discriminator),
+            user,
+            service,
+        }
     }
 }
 
@@ -21,7 +26,7 @@ impl User<DiscordService> for DiscordUser {
     }
 
     fn name(&self) -> &str {
-        &self.user.name
+        &self.name
     }
 
     fn avatar(&self) -> &Option<String> {
