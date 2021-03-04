@@ -112,7 +112,7 @@ impl LuaState {
         let on_command_fn: Function = sandbox_tbl.get("on_command")?;
 
         let thread = self.inner.create_thread(on_command_fn)?;
-        let channel_id = msg.channel_id();
+        let channel_id = msg.channel().id();
         thread.resume((msg, args))?;
 
         if thread.status() == ThreadStatus::Resumable {

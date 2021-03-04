@@ -208,9 +208,9 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
                 (),
                 module_settings.set_setting(
                     if server {
-                        SettingContext::Server(msg.server_id())
+                        SettingContext::Server(msg.server().id())
                     } else {
-                        SettingContext::Channel(msg.channel_id())
+                        SettingContext::Channel(msg.channel().id())
                     },
                     &setting,
                     &value,
@@ -239,10 +239,10 @@ pub struct BotMessage(Arc<BotMessageInner>);
 pub struct BotMessageInner {
     bot: Arc<Bot>,
     author: BotUser,
-    channel_id: ChannelId,
-    server_id: ServerId,
+    channel: BotChannel,
     content: String,
     service: ServiceKind,
+    server: BotServer,
 }
 
 impl BotMessage {
@@ -250,36 +250,33 @@ impl BotMessage {
         bot: Arc<Bot>,
         msg: &Arc<dyn Message<impl Service>>,
     ) -> Result<BotMessage> {
-        let user = bot
-            .db()
-            .get_user_from_service_user_id(msg.author().id())
-            .await?;
-        let restricted = bot.db().is_restricted(user.uid).await?;
-
-        let channel = msg.channel().await?;
+        let service_user = msg.author().clone() as Arc<dyn User<_>>;
+        let author = BotUser::from_user(bot.clone(), &service_user).await?;
+        let service_channel = msg.channel().await? as Arc<dyn Channel<_>>;
+        let channel = BotChannel::from_channel(&service_channel).await?;
+        let service_server = service_channel.server().await? as Arc<dyn Server<_>>;
+        let server = BotServer::from_server(&service_server).await?;
 
         Ok(BotMessage(Arc::new(BotMessageInner {
             bot,
-            author: BotUser(
-                Arc::new(BotUserInner {
-                    name: msg.author().name().to_string(),
-                    restricted,
-                }),
-                Arc::new(user),
-            ),
-            channel_id: channel.id(),
-            server_id: channel.server().await?.id(),
+            author,
+            channel,
             content: msg.content().to_string(),
             service: msg.service().kind(),
+            server,
         })))
     }
 
-    pub fn channel_id(&self) -> ChannelId {
-        self.0.channel_id
+    pub fn author(&self) -> &BotUser {
+        &self.0.author
     }
 
-    pub fn server_id(&self) -> ServerId {
-        self.0.server_id
+    pub fn channel(&self) -> &BotChannel {
+        &self.0.channel
+    }
+
+    pub fn server(&self) -> &BotServer {
+        &self.0.server
     }
 }
 
@@ -287,7 +284,7 @@ impl UserData for BotMessage {
     fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
         methods.add_method("reply", |_state, msg, content: String| {
             let ctx = msg.0.bot.get_ctx();
-            let channel_id = msg.0.channel_id;
+            let channel_id = msg.0.channel.id();
 
             tokio::spawn(async move {
                 ctx.services()
@@ -321,6 +318,25 @@ impl UserData for BotMessage {
 pub struct BotUser(Arc<BotUserInner>, Arc<DbUser>);
 
 impl BotUser {
+    pub async fn from_user(
+        bot: Arc<Bot>,
+        service_user: &Arc<dyn User<impl Service>>,
+    ) -> Result<BotUser> {
+        let user = bot
+            .db()
+            .get_user_from_service_user_id(service_user.id())
+            .await?;
+        let restricted = bot.db().is_restricted(user.uid).await?;
+
+        Ok(BotUser(
+            Arc::new(BotUserInner {
+                name: service_user.name().to_string(),
+                restricted,
+            }),
+            Arc::new(user),
+        ))
+    }
+
     pub fn uid(&self) -> UserId {
         self.1.uid
     }
@@ -344,6 +360,68 @@ impl UserData for BotUser {
                     state.create_string(user.1.role.as_bytes())?,
                 )),
                 "restricted" => Ok(mlua::Value::Boolean(user.0.restricted)),
+                _ => Ok(mlua::Value::Nil),
+            },
+        );
+    }
+}
+
+#[derive(Clone)]
+pub struct BotChannel(Arc<BotChannelInner>);
+
+pub struct BotChannelInner {
+    id: ChannelId,
+}
+
+impl BotChannel {
+    pub async fn from_channel(channel: &Arc<dyn Channel<impl Service>>) -> Result<BotChannel> {
+        Ok(BotChannel(Arc::new(BotChannelInner { id: channel.id() })))
+    }
+
+    pub fn id(&self) -> ChannelId {
+        self.0.id
+    }
+}
+
+impl UserData for BotChannel {
+    fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
+        methods.add_meta_method(
+            MetaMethod::Index,
+            |state, user, index: String| match index.as_str() {
+                "id" => Ok(mlua::Value::String(
+                    state.create_string(&user.0.id.to_short_str())?,
+                )),
+                _ => Ok(mlua::Value::Nil),
+            },
+        );
+    }
+}
+
+#[derive(Clone)]
+pub struct BotServer(Arc<BotServerInner>);
+
+pub struct BotServerInner {
+    id: ServerId,
+}
+
+impl BotServer {
+    pub async fn from_server(server: &Arc<dyn Server<impl Service>>) -> Result<BotServer> {
+        Ok(BotServer(Arc::new(BotServerInner { id: server.id() })))
+    }
+
+    pub fn id(&self) -> ServerId {
+        self.0.id
+    }
+}
+
+impl UserData for BotServer {
+    fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
+        methods.add_meta_method(
+            MetaMethod::Index,
+            |state, user, index: String| match index.as_str() {
+                "id" => Ok(mlua::Value::String(
+                    state.create_string(&user.0.id.to_short_str())?,
+                )),
                 _ => Ok(mlua::Value::Nil),
             },
         );

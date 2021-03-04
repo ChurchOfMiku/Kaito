@@ -242,6 +242,7 @@ pub trait Channel<S: Service>: Send + Sync {
     fn name(&self) -> String;
     async fn send<'a, C>(&self, content: C) -> Result<()>
     where
+        Self: Sized,
         C: ToMessageContent<'a>;
     async fn server(&self) -> Result<Arc<S::Server>>;
     fn service(&self) -> &Arc<S>;
