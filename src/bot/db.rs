@@ -380,6 +380,15 @@ impl BotDb {
         Ok(())
     }
 
+    pub async fn count_uid_tags(&self, uid: UserId) -> Result<i64> {
+        let (count,) = sqlx::query_as("SELECT COUNT(*) FROM tags WHERE uid = ?")
+            .bind(uid)
+            .fetch_one(self.pool())
+            .await?;
+
+        Ok(count)
+    }
+
     pub fn pool(&self) -> &Pool<Sqlite> {
         &self.pool
     }

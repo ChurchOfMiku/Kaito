@@ -48,6 +48,10 @@ bot.add_command("tag", {
                     return msg:reply("error: the tag value cannot be longer than " .. tags.MAX_VALUE_LIMIT .. " characters")
                 end
 
+                if tags.count_user_tags(msg.author):await() > tags.MAX_USER_TAGS then
+                    return msg:reply("error: the max tags owned limit on " .. tags.MAX_USER_TAGS .. " tags has been reached")
+                end
+
                 local error = tags.create_tag(msg.author, msg.channel.server, args.tag, args.value):await()
 
                 if error then
