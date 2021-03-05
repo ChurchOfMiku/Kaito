@@ -135,6 +135,8 @@ function bot.help(msg, cmd)
 
             if #extra > 0 then
                 extra = " (" .. table.concat(extra, ", ") .. ")"
+            else
+                extra = ""
             end
 
             arguments =
