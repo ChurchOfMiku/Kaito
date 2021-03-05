@@ -1,7 +1,9 @@
 bot = bot or {}
 bot.cmds = bot.cmds or {}
+bot.aliases = bot.aliases or {}
 
 include("./lib/async.lua")
+include("./lib/tags.lua")
 
 function bot.think()
 end
@@ -58,8 +60,15 @@ local function create_command(cmd, options)
     return options
 end
 
-function bot.add_command(cmd, options)
-    bot.cmds[cmd] = create_command(cmd, options)
+function bot.add_command(cmd_name, options)
+    local cmd = create_command(cmd_name, options)
+    bot.cmds[cmd_name] = cmd
+
+    if options.aliases then
+        for k,v in pairs(options.aliases) do
+            bot.aliases[v] = cmd
+        end
+    end
 end
 
 function bot.sub_command(cmd, options)
@@ -110,7 +119,7 @@ function bot.help(msg, cmd)
         local len = #cmd._arguments
         for k, v in ipairs(cmd._arguments) do
             local name = v.name or v.key
-            usage_arguments = usage_arguments .. "<" .. name .. ">" .. (k ~= len and " " or "")
+            usage_arguments = usage_arguments .. "[" .. name .. "]" .. (k ~= len and " " or "")
             min_len = math.max(min_len, #name)
         end
 
@@ -138,14 +147,14 @@ function bot.help(msg, cmd)
             usage_options = usage_options .. " "
         end
 
-        usage_options = usage_options .. "<SUBCOMMAND>"
+        usage_options = usage_options .. "<SUBCOMMAND> "
 
-        sub_commands = "\n\nSUBCOMMANDS:\n"
+        sub_commands = "\nSUBCOMMANDS:\n"
 
         local min_len = 0
 
         for _, v in ipairs(cmd.sub_commands) do
-            min_len = math.max(min_len, #cmd.cmd)
+            min_len = math.max(min_len, #v.cmd)
         end
 
         local pad = min_len + 3
@@ -167,6 +176,7 @@ end
 
 function bot.parse_args(cmd, args)
     local out = {}
+    local extra_args = {}
 
     local taking_opt_value
     local arg_index = 1
@@ -216,13 +226,12 @@ function bot.parse_args(cmd, args)
             else
                 local argument = cmd._arguments[arg_index]
 
-                if not argument then
-                    return false, "too many arguments"
+                if argument then
+                    out[argument.key] = arg
+                    arg_index = arg_index + 1
+                else
+                    table.insert(extra_args, arg)
                 end
-
-                out[argument.key] = arg
-
-                arg_index = arg_index + 1
             end
         end
     end
@@ -235,7 +244,7 @@ function bot.parse_args(cmd, args)
         end
     end
 
-    return true, out
+    return true, out, extra_args
 end
 
 function bot.has_role_or_higher(role, user_role, only_higher)
@@ -291,20 +300,20 @@ local function exec_command(msg, cmd, args)
         return bot.help(msg, cmd)
     end
 
-    local succ, res = bot.parse_args(cmd, args)
+    local succ, res, extra_args = bot.parse_args(cmd, args)
 
     if not succ then
         return msg:reply("argument error: " .. res .. '\nUse "' .. get_abs_cmd(cmd) .. ' --help" for more info.')
     end
 
-    cmd.callback(msg, res)
+    cmd.callback(msg, res, extra_args)
 end
 
 function bot.on_command(msg, args)
     local cmd_name = args[1]
     local args = {table.unpack(args, 2, #args)}
 
-    local cmd = bot.cmds[cmd_name]
+    local cmd = bot.cmds[cmd_name] or bot.aliases[cmd_name]
 
     if not cmd then
         return

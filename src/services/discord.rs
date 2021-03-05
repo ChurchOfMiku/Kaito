@@ -17,7 +17,7 @@ mod message;
 mod server;
 mod user;
 
-use super::{Service, ServiceFeatures, ServiceKind};
+use super::{Channel, Service, ServiceFeatures, ServiceKind};
 use crate::bot::Bot;
 
 pub struct DiscordService {
@@ -140,7 +140,16 @@ impl Service for DiscordService {
         )))
     }
 
-    async fn find_user(self: &Arc<Self>, find: &str) -> Result<Arc<Self::User>> {
+    async fn user(self: &Arc<Self>, id: u64) -> Result<Arc<Self::User>> {
+        let user = match self.cache_and_http().cache.user(id).await {
+            Some(channel) => channel,
+            None => self.cache_and_http().http.get_user(id).await?,
+        };
+
+        Ok(Arc::new(user::DiscordUser::new(user, self.clone())))
+    }
+
+    async fn find_user(self: &Arc<Self>, channel_id: u64, find: &str) -> Result<Arc<Self::User>> {
         let find = find.trim();
 
         if let Some(id) = serenity::utils::parse_username(find).or(u64::from_str(find).ok()) {
@@ -151,6 +160,23 @@ impl Service for DiscordService {
 
             Ok(Arc::new(user::DiscordUser::new(user, self.clone())))
         } else {
+            let channel = self.find_channel(channel_id).await?;
+
+            // Search for the member manually
+            if let Some((member, _)) = channel
+                .server()
+                .await?
+                .guild()
+                .members_username_containing(find, false, true)
+                .await
+                .first()
+            {
+                return Ok(Arc::new(user::DiscordUser::new(
+                    member.user.clone(),
+                    self.clone(),
+                )));
+            }
+
             // TODO: Look in caches for name matches?
             return Err(anyhow!("unable to parse \"{}\" as a discord user", find));
         }
@@ -160,6 +186,18 @@ impl Service for DiscordService {
 impl DiscordService {
     fn cache_and_http(&self) -> Arc<CacheAndHttp> {
         self.cache_and_http.load_full().unwrap()
+    }
+
+    async fn find_channel(self: &Arc<Self>, id: u64) -> Result<Arc<channel::DiscordChannel>> {
+        let channel = match self.cache_and_http().cache.channel(id).await {
+            Some(channel) => channel,
+            None => self.cache_and_http().http.get_channel(id).await?,
+        };
+
+        Ok(Arc::new(channel::DiscordChannel::new(
+            channel,
+            self.clone(),
+        )))
     }
 }
 

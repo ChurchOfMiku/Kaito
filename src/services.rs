@@ -93,7 +93,23 @@ macro_rules! services {
                 Ok(())
             }
 
-            pub async fn find_user(&self, service: ServiceKind, find: &str) -> Result<Arc<dyn User<impl Service>>> {
+            pub async fn user(&self, user_id: ServiceUserId) -> Result<Arc<dyn User<impl Service>>> {
+                match user_id {
+                    $(
+                        ServiceUserId::$service_module_ident(id) => {
+                            let user: Arc<<$service as Service>::User> = self.$service_ident.as_ref()
+                            .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                            .service()
+                            .user(id)
+                            .await?;
+
+                            Ok(user)
+                        }
+                    ),+
+                }
+            }
+
+            pub async fn find_user(&self, channel_id: ChannelId, find: &str) -> Result<Arc<dyn User<impl Service>>> {
                 if let Some(sep) = find.find(':') {
                     let (before, after) = find.split_at(sep);
                     let after = &after[1..];
@@ -101,9 +117,14 @@ macro_rules! services {
                     match before {
                         $(
                             <$service as Service>::ID | <$service as Service>::ID_SHORT => {
-                                let user = self
-                                    .get_service_from_kind(<$service as Service>::KIND)?
-                                    .find_user(after).await?;
+                                let user = self.$service_ident
+                                .as_ref()
+                                .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                                .service()
+                                    .find_user(match channel_id {
+                                          ChannelId::$service_module_ident(id) => id,
+                                        _ => panic!()
+                                    }, after).await?;
 
                                 return Ok(user)
                             },
@@ -113,24 +134,18 @@ macro_rules! services {
                 }
 
                 Ok(
-                    self
-                        .get_service_from_kind(service)?
-                        .find_user(find)
-                        .await?
-                )
-            }
-
-            pub fn get_service_from_kind(&self, kind: ServiceKind) -> Result<&Arc<impl Service>> {
-                match kind {
-                    $(
-                        ServiceKind::$service_module_ident => {
-                            return Ok(self.$service_ident
+                    match channel_id {
+                        $(
+                            ChannelId::$service_module_ident(id) => self
+                            .$service_ident
                                 .as_ref()
                                 .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
-                                .service())
-                        },
-                    ),+
-                }
+                                .service()
+                            .find_user(id, find)
+                            .await?,
+                        ),+
+                    }
+                )
             }
 
             pub fn id_from_kind(kind: ServiceKind) -> &'static str {
@@ -200,7 +215,12 @@ pub trait Service: 'static + Sized + Send + Sync {
 
     async fn current_user(self: &Arc<Self>) -> Result<Arc<Self::User>>;
     async fn channel(self: &Arc<Self>, id: Self::ChannelId) -> Result<Arc<Self::Channel>>;
-    async fn find_user(self: &Arc<Self>, find: &str) -> Result<Arc<Self::User>>;
+    async fn user(self: &Arc<Self>, get_user: Self::UserId) -> Result<Arc<Self::User>>;
+    async fn find_user(
+        self: &Arc<Self>,
+        channel_id: Self::ChannelId,
+        find: &str,
+    ) -> Result<Arc<Self::User>>;
 
     fn kind(&self) -> ServiceKind {
         Self::KIND

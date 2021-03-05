@@ -9,7 +9,7 @@ bot.add_command("restrict", {
         }
     },
     callback = function(msg, args)
-        local user = bot.find_user(msg.service, args.user):await()
+        local user = bot.find_user(msg.channel, args.user):await()
 
 
         if msg.author.uid == user.uid then

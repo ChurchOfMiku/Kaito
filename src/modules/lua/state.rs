@@ -23,6 +23,7 @@ use super::{
         include_lua, lib_include,
         os::lib_os,
         r#async::lib_async,
+        tags::lib_tags,
     },
 };
 use crate::{bot::Bot, services::ChannelId, utils::escape_untrusted_text};
@@ -84,6 +85,7 @@ impl LuaState {
             include_lua(&inner, &lua_root_path, "sandbox.lua")?;
         } else {
             lib_bot(&inner, bot, async_sender.clone())?;
+            lib_tags(&inner, bot, async_sender.clone())?;
             inner.set_named_registry_value("__ASYNC_THREADS", inner.create_table()?)?;
             inner.set_named_registry_value("__ASYNC_THREADS_CHANNELS", inner.create_table()?)?;
             include_lua(&inner, &lua_root_path, "bot.lua")?;

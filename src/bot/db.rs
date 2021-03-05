@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub type UserId = i64;
+pub type Sid = i64;
 
 pub struct BotDb {
     pool: Pool<Sqlite>,
@@ -42,6 +43,29 @@ impl BotDb {
         }
 
         Ok(db)
+    }
+
+    pub async fn get_user_from_uid(&self, uid: UserId) -> Result<User> {
+        let (role, discord_id): (Option<String>, Option<Vec<u8>>) =
+            sqlx::query_as("SELECT role, discord_id FROM users WHERE uid = ?")
+                .bind(uid)
+                .fetch_one(self.pool())
+                .await?;
+
+        let role = role
+            .filter(|role| ROLES.contains(&role.as_str()))
+            .unwrap_or_else(|| DEFAULT_ROLE.into());
+        let discord_id = discord_id.map(|data| {
+            let mut bytes = [0u8; 8];
+            bytes.clone_from_slice(&data[0..8]);
+            u64::from_le_bytes(bytes)
+        });
+
+        Ok(User {
+            uid,
+            role,
+            discord_id,
+        })
     }
 
     pub async fn get_user_from_service_user_id(
@@ -218,6 +242,144 @@ impl BotDb {
         Ok(())
     }
 
+    pub async fn get_sid(&self, server_id: ServerId) -> Result<Sid> {
+        let res: Result<(Sid,), sqlx::Error> = match server_id {
+            ServerId::Discord(discord_id) => {
+                sqlx::query_as("SELECT sid FROM servers WHERE discord_id = ?")
+                    .bind(discord_id.to_le_bytes().to_vec())
+            }
+        }
+        .fetch_one(self.pool())
+        .await;
+
+        match res {
+            Err(sqlx::Error::RowNotFound) => {
+                let res = match server_id {
+                    ServerId::Discord(discord_id) => {
+                        self.pool()
+                            .execute(
+                                sqlx::query("INSERT INTO servers ( discord_id ) VALUES ( ? )")
+                                    .bind(discord_id.to_le_bytes().to_vec()),
+                            )
+                            .await?
+                    }
+                };
+
+                Ok(res.last_insert_rowid())
+            }
+            Err(err) => return Err(err.into()),
+            Ok((res,)) => Ok(res),
+        }
+    }
+
+    // Tags
+    pub async fn find_tag(&self, server_id: ServerId, key: &str) -> Result<Option<Tag>> {
+        let sid = self.get_sid(server_id).await?;
+
+        sqlx::query_as("SELECT value, uid, transfer_uid FROM tags WHERE key = ? AND sid = ?")
+            .bind(key)
+            .bind(sid)
+            .fetch_one(self.pool())
+            .await
+            .map(
+                |(value, uid, transfer_uid): (String, UserId, Option<UserId>)| {
+                    Some(Tag {
+                        key: key.to_string(),
+                        uid,
+                        transfer_uid,
+                        value,
+                        sid,
+                    })
+                },
+            )
+            .or_else(|err| match err {
+                sqlx::Error::RowNotFound => Ok(None),
+                _ => Err(err.into()),
+            })
+    }
+
+    pub async fn create_tag(
+        &self,
+        uid: UserId,
+        server_id: ServerId,
+        key: &str,
+        value: &str,
+    ) -> Result<bool> {
+        let sid = self.get_sid(server_id).await?;
+
+        match self
+            .pool()
+            .execute(
+                sqlx::query("INSERT INTO tags ( key, sid, uid, value ) VALUES ( ?, ?, ?, ? )")
+                    .bind(key)
+                    .bind(sid)
+                    .bind(uid)
+                    .bind(value),
+            )
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(sqlx::Error::Database(_)) => Ok(false),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    pub async fn edit_tag(&self, sid: Sid, key: &str, value: &str) -> Result<()> {
+        self.pool()
+            .execute(
+                sqlx::query("UPDATE tags SET value = ? WHERE key = ? AND sid = ?")
+                    .bind(value)
+                    .bind(key)
+                    .bind(sid),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn set_tag_uid(&self, sid: Sid, key: &str, uid: UserId) -> Result<()> {
+        self.pool()
+            .execute(
+                sqlx::query("UPDATE tags SET uid = ? WHERE key = ? AND sid = ?")
+                    .bind(uid)
+                    .bind(key)
+                    .bind(sid),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn set_tag_transfer_uid(
+        &self,
+        sid: Sid,
+        key: &str,
+        uid: Option<UserId>,
+    ) -> Result<()> {
+        self.pool()
+            .execute(
+                sqlx::query("UPDATE tags SET transfer_uid = ? WHERE key = ? AND sid = ?")
+                    .bind(uid)
+                    .bind(key)
+                    .bind(sid),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn delete_tag(&self, sid: Sid, key: &str) -> Result<()> {
+        self.pool()
+            .execute(
+                sqlx::query("DELETE FROM tags WHERE key = ? AND sid = ?")
+                    .bind(key)
+                    .bind(sid),
+            )
+            .await?;
+
+        Ok(())
+    }
+
     pub fn pool(&self) -> &Pool<Sqlite> {
         &self.pool
     }
@@ -228,4 +390,22 @@ pub struct User {
     pub uid: UserId,
     pub role: String,
     pub discord_id: Option<u64>,
+}
+
+impl User {
+    pub fn service_user_id(&self) -> ServiceUserId {
+        if let Some(discord_id) = self.discord_id {
+            return ServiceUserId::Discord(discord_id);
+        }
+
+        unreachable!("no valid service id for uid {}", self.uid)
+    }
+}
+
+pub struct Tag {
+    pub key: String,
+    pub uid: UserId,
+    pub sid: Sid,
+    pub transfer_uid: Option<UserId>,
+    pub value: String,
 }

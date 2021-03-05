@@ -12,6 +12,7 @@ use std::{
 pub mod r#async;
 pub mod bot;
 pub mod os;
+pub mod tags;
 
 fn remove_upwards_components(path: &Path) -> PathBuf {
     let mut p = PathBuf::new();

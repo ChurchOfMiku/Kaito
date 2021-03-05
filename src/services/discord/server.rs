@@ -28,3 +28,9 @@ impl Server<DiscordService> for DiscordServer {
         &self.service
     }
 }
+
+impl DiscordServer {
+    pub fn guild(&self) -> &guild::Guild {
+        &self.guild
+    }
+}

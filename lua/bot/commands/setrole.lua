@@ -15,7 +15,7 @@ bot.add_command("setrole", {
         }
     },
     callback = function(msg, args)
-        local user = bot.find_user(msg.service, args.user):await()
+        local user = bot.find_user(msg.channel, args.user):await()
 
         if user then
             bot.set_role(user, args.role):await()

@@ -2,7 +2,6 @@ use anyhow::Result;
 use crossbeam::channel::Sender;
 use mlua::{prelude::*, Error as LuaError, Lua, MetaMethod, UserData, UserDataMethods};
 use std::sync::Arc;
-use thiserror::Error;
 
 use super::super::state::LuaAsyncCallback;
 use crate::{
@@ -14,6 +13,7 @@ use crate::{
         Channel, ChannelId, Message, Server, ServerId, Service, ServiceKind, Services, User,
     },
     settings::SettingContext,
+    utils::escape_untrusted_text,
 };
 
 pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) -> Result<()> {
@@ -42,43 +42,32 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
 
     let bot2 = bot.clone();
     let sender2 = sender.clone();
-    let find_user_fn = state.create_function(move |state, (service, user): (String, String)| {
-        let ctx = bot2.get_ctx();
-
-        let service = match ServiceKind::from_str(&service) {
-            Some(kind) => kind,
-            None => {
-                return Err(LuaError::ExternalError(Arc::new(BotError::UnknownService(
-                    service,
-                ))))
-            }
-        };
+    let get_user_fn = state.create_function(move |state, user_id: i64| {
+        let bot = bot2.clone();
 
         let fut = create_lua_future!(
             state,
             sender2,
             (),
             async move {
-                match ctx.services().find_user(service, &user).await {
-                    Ok(service_user) => match ctx
-                        .bot()
-                        .db()
-                        .get_user_from_service_user_id(service_user.id())
-                        .await
-                    {
-                        Ok(user) => ctx
-                            .bot()
-                            .db()
-                            .is_restricted(user.uid)
-                            .await
-                            .map(|restricted| (service_user, user, restricted)),
-                        Err(err) => Err(err),
+                let user = bot.db().get_user_from_uid(user_id).await;
+                let ctx = bot.get_ctx();
+
+                match user {
+                    Ok(user) => {
+                        Ok((futures::join!(
+                            ctx.services().user(user.service_user_id()),
+                            bot.db().is_restricted(user_id),
+                        ), user))
                     },
-                    Err(err) => Err(err),
+                    Err(err) => Err(err)
                 }
             },
-            |_state, _data: (), res: Result<(Arc<dyn User<impl Service>>, DbUser, bool)>| {
-                let (service_user, user, restricted): (Arc<dyn User<_>>, _, _) = res?;
+            |_state,
+             _data: (),
+             res: Result<((Result<Arc<dyn User<impl Service>>>, Result<bool>), DbUser)>| {
+                let (res, user) = res?;
+                let (service_user, restricted): (Arc<dyn User<_>>, _) = (res.0?, res.1?);
 
                 Ok(BotUser(
                     Arc::new(BotUserInner {
@@ -92,6 +81,54 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
 
         Ok(fut)
     })?;
+    bot_tbl.set("get_user", get_user_fn)?;
+
+    let bot2 = bot.clone();
+    let sender2 = sender.clone();
+    let find_user_fn =
+        state.create_function(move |state, (channel, user): (LuaAnyUserData, String)| {
+            let ctx = bot2.get_ctx();
+
+            let channel = channel.borrow::<BotChannel>()?.clone();
+
+            let fut = create_lua_future!(
+                state,
+                sender2,
+                (),
+                async move {
+                    match ctx.services().find_user(channel.id(), &user).await {
+                        Ok(service_user) => match ctx
+                            .bot()
+                            .db()
+                            .get_user_from_service_user_id(service_user.id())
+                            .await
+                        {
+                            Ok(user) => ctx
+                                .bot()
+                                .db()
+                                .is_restricted(user.uid)
+                                .await
+                                .map(|restricted| (service_user, user, restricted)),
+                            Err(err) => Err(err),
+                        },
+                        Err(err) => Err(err),
+                    }
+                },
+                |_state, _data: (), res: Result<(Arc<dyn User<impl Service>>, DbUser, bool)>| {
+                    let (service_user, user, restricted): (Arc<dyn User<_>>, _, _) = res?;
+
+                    Ok(BotUser(
+                        Arc::new(BotUserInner {
+                            name: service_user.name().to_string(),
+                            restricted,
+                        }),
+                        Arc::new(user),
+                    ))
+                }
+            );
+
+            Ok(fut)
+        })?;
     bot_tbl.set("find_user", find_user_fn)?;
 
     let bot2 = bot.clone();
@@ -208,7 +245,7 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
                 (),
                 module_settings.set_setting(
                     if server {
-                        SettingContext::Server(msg.server().id())
+                        SettingContext::Server(msg.channel().server().id())
                     } else {
                         SettingContext::Channel(msg.channel().id())
                     },
@@ -242,7 +279,6 @@ pub struct BotMessageInner {
     channel: BotChannel,
     content: String,
     service: ServiceKind,
-    server: BotServer,
 }
 
 impl BotMessage {
@@ -254,8 +290,6 @@ impl BotMessage {
         let author = BotUser::from_user(bot.clone(), &service_user).await?;
         let service_channel = msg.channel().await? as Arc<dyn Channel<_>>;
         let channel = BotChannel::from_channel(&service_channel).await?;
-        let service_server = service_channel.server().await? as Arc<dyn Server<_>>;
-        let server = BotServer::from_server(&service_server).await?;
 
         Ok(BotMessage(Arc::new(BotMessageInner {
             bot,
@@ -263,7 +297,6 @@ impl BotMessage {
             channel,
             content: msg.content().to_string(),
             service: msg.service().kind(),
-            server,
         })))
     }
 
@@ -273,10 +306,6 @@ impl BotMessage {
 
     pub fn channel(&self) -> &BotChannel {
         &self.0.channel
-    }
-
-    pub fn server(&self) -> &BotServer {
-        &self.0.server
     }
 }
 
@@ -300,10 +329,13 @@ impl UserData for BotMessage {
         methods.add_meta_method(MetaMethod::Index, |state, msg, index: String| {
             match index.as_str() {
                 "author" => Ok(mlua::Value::UserData(
-                    state.create_userdata(msg.0.author.clone())?,
+                    state.create_userdata(msg.author().clone())?,
                 )),
                 "content" => Ok(mlua::Value::String(
                     state.create_string(msg.0.content.as_bytes())?,
+                )),
+                "channel" => Ok(mlua::Value::UserData(
+                    state.create_userdata(msg.channel().clone())?,
                 )),
                 "service" => Ok(mlua::Value::String(
                     state.create_string(Services::id_from_kind(msg.0.service).as_bytes())?,
@@ -371,25 +403,49 @@ pub struct BotChannel(Arc<BotChannelInner>);
 
 pub struct BotChannelInner {
     id: ChannelId,
+    server: BotServer,
+    service: ServiceKind,
 }
 
 impl BotChannel {
     pub async fn from_channel(channel: &Arc<dyn Channel<impl Service>>) -> Result<BotChannel> {
-        Ok(BotChannel(Arc::new(BotChannelInner { id: channel.id() })))
+        let service_server = channel.server().await? as Arc<dyn Server<_>>;
+        let server = BotServer::from_server(&service_server).await?;
+
+        Ok(BotChannel(Arc::new(BotChannelInner {
+            id: channel.id(),
+            server,
+            service: channel.service().kind(),
+        })))
     }
 
     pub fn id(&self) -> ChannelId {
         self.0.id
     }
+
+    pub fn server(&self) -> &BotServer {
+        &self.0.server
+    }
+
+    pub fn service(&self) -> ServiceKind {
+        self.0.service
+    }
 }
 
 impl UserData for BotChannel {
     fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
+        methods.add_method("escape_text", |_state, msg, text: String| {
+            Ok(escape_untrusted_text(msg.0.service, text))
+        });
+
         methods.add_meta_method(
             MetaMethod::Index,
-            |state, user, index: String| match index.as_str() {
+            |state, channel, index: String| match index.as_str() {
                 "id" => Ok(mlua::Value::String(
-                    state.create_string(&user.0.id.to_short_str())?,
+                    state.create_string(&channel.0.id.to_short_str())?,
+                )),
+                "server" => Ok(mlua::Value::UserData(
+                    state.create_userdata(channel.server().clone())?,
                 )),
                 _ => Ok(mlua::Value::Nil),
             },
@@ -426,10 +482,4 @@ impl UserData for BotServer {
             },
         );
     }
-}
-
-#[derive(Debug, Error)]
-pub enum BotError {
-    #[error("unknown service \"{}\"", _0)]
-    UnknownService(String),
 }
