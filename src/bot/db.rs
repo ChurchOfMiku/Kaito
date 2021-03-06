@@ -327,7 +327,7 @@ impl BotDb {
     pub async fn edit_tag(&self, sid: Sid, key: &str, value: &str) -> Result<()> {
         self.pool()
             .execute(
-                sqlx::query("UPDATE tags SET value = ? WHERE key = ? AND sid = ?")
+                sqlx::query("UPDATE tags SET value = ?, edit_time = CURRENT_TIMESTAMP WHERE key = ? AND sid = ?")
                     .bind(value)
                     .bind(key)
                     .bind(sid),
