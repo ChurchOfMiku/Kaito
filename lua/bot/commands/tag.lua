@@ -35,7 +35,7 @@ bot.add_command("tag", {
                 }
             },
             description = "Create a new tag",
-            callback = function(msg, args)
+            callback = function(msg, args, extra_args)
                 if not tags.IsValidName(args.tag) then
                     return msg:reply("error: the tag name must be alphanumeric")
                 end
@@ -44,7 +44,13 @@ bot.add_command("tag", {
                     return msg:reply("error: the tag name cannot be longer than " .. tags.MAX_NAME_LIMIT .. " characters")
                 end
 
-                if #args.value > tags.MAX_VALUE_LIMIT then
+                local value = args.value
+
+                if #extra_args > 0 then
+                    value = value .. " " .. table.concat(extra_args, " ")
+                end
+
+                if #value > tags.MAX_VALUE_LIMIT then
                     return msg:reply("error: the tag value cannot be longer than " .. tags.MAX_VALUE_LIMIT .. " characters")
                 end
 
@@ -52,7 +58,7 @@ bot.add_command("tag", {
                     return msg:reply("error: the max tags owned limit on " .. tags.MAX_USER_TAGS .. " tags has been reached")
                 end
 
-                local error = tags.create_tag(msg.author, msg.channel.server, args.tag, args.value):await()
+                local error = tags.create_tag(msg.author, msg.channel.server, args.tag, value):await()
 
                 if error then
                     msg:reply("error: " .. msg.channel:escape_text(error))
@@ -117,7 +123,7 @@ bot.add_command("tag", {
                 }
             },
             description = "Edit a tag",
-            callback = function(msg, args)
+            callback = function(msg, args, extra_args)
                 local tag = tags.find_tag(msg.channel.server, args.tag):await()
 
                 if not tag then
@@ -130,11 +136,17 @@ bot.add_command("tag", {
                     end
                 end
 
-                if #args.value > tags.MAX_VALUE_LIMIT then
+                local value = args.value
+
+                if #extra_args > 0 then
+                    value = value .. " " .. table.concat(extra_args, " ")
+                end
+
+                if #value > tags.MAX_VALUE_LIMIT then
                     return msg:reply("error: the tag value cannot be longer than " .. tags.MAX_VALUE_LIMIT .. " characters")
                 end
 
-                tag:edit(args.value):await()
+                tag:edit(value):await()
 
                 msg:reply("the tag \"" .. msg.channel:escape_text(args.tag) .. "\" has been edited")
             end,
