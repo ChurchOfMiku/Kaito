@@ -3,7 +3,10 @@ use serenity::model::channel;
 use std::sync::Arc;
 
 use super::{channel::DiscordChannel, user::DiscordUser, DiscordService};
-use crate::services::Message;
+use crate::{
+    message::{MessageContent, ToMessageContent},
+    services::{Message, MessageId},
+};
 
 pub struct DiscordMessage {
     author: Arc<DiscordUser>,
@@ -47,7 +50,47 @@ impl Message<DiscordService> for DiscordMessage {
         Ok(Arc::new(DiscordChannel::new(channel, self.service.clone())))
     }
 
+    async fn edit<'a, C>(&self, content: C) -> Result<()>
+    where
+        C: ToMessageContent<'a>,
+    {
+        match content.to_message_content() {
+            MessageContent::String(text) => {
+                self.channel()
+                    .await?
+                    .inner()
+                    .id()
+                    .edit_message(&self.service.cache_and_http().http, self.msg.id, |m| {
+                        m.content(text)
+                    })
+                    .await?
+            }
+            MessageContent::Str(text) => {
+                self.channel()
+                    .await?
+                    .inner()
+                    .id()
+                    .edit_message(&self.service.cache_and_http().http, self.msg.id, |m| {
+                        m.content(text)
+                    })
+                    .await?
+            }
+        };
+
+        Ok(())
+    }
+
+    async fn delete(&self) -> Result<()> {
+        self.msg.delete(&self.service.cache_and_http()).await?;
+
+        Ok(())
+    }
+
     fn service(&self) -> &Arc<DiscordService> {
         &self.service
+    }
+
+    fn id(&self) -> MessageId {
+        MessageId::Discord(*self.msg.id.as_u64())
     }
 }

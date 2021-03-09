@@ -19,7 +19,7 @@ use std::sync::{
 use super::{
     http,
     lib::{
-        bot::{lib_bot, BotMessage},
+        bot::{lib_bot, BotMessage, BotUser},
         include_lua, lib_include,
         os::lib_os,
         r#async::lib_async,
@@ -109,14 +109,7 @@ impl LuaState {
         })
     }
 
-    pub fn run_bot_command(&self, msg: BotMessage, args: Vec<String>) -> Result<()> {
-        let sandbox_tbl: Table = self.inner.globals().get("bot")?;
-        let on_command_fn: Function = sandbox_tbl.get("on_command")?;
-
-        let thread = self.inner.create_thread(on_command_fn)?;
-        let channel_id = msg.channel().id();
-        thread.resume((msg, args))?;
-
+    fn create_async_thread(&self, thread: Thread, channel_id: ChannelId) -> Result<()> {
         if thread.status() == ThreadStatus::Resumable {
             let threads: Table = self.inner.named_registry_value("__ASYNC_THREADS")?;
             let thread_channels: Table = self
@@ -126,6 +119,38 @@ impl LuaState {
             threads.set(id, thread)?;
             thread_channels.set(id, channel_id.to_short_str())?;
         }
+
+        Ok(())
+    }
+
+    pub fn run_bot_command(&self, msg: BotMessage, args: Vec<String>) -> Result<()> {
+        let sandbox_tbl: Table = self.inner.globals().get("bot")?;
+        let on_command_fn: Function = sandbox_tbl.get("on_command")?;
+
+        let thread = self.inner.create_thread(on_command_fn)?;
+        let channel_id = msg.channel().id();
+        thread.resume((msg, args))?;
+
+        self.create_async_thread(thread, channel_id)?;
+
+        Ok(())
+    }
+
+    pub fn run_bot_reaction(
+        &self,
+        msg: BotMessage,
+        reactor: BotUser,
+        reaction: String,
+        removed: bool,
+    ) -> Result<()> {
+        let sandbox_tbl: Table = self.inner.globals().get("bot")?;
+        let on_reaction_fn: Function = sandbox_tbl.get("on_reaction")?;
+
+        let thread = self.inner.create_thread(on_reaction_fn)?;
+        let channel_id = msg.channel().id();
+        thread.resume((msg, reactor, reaction, removed))?;
+
+        self.create_async_thread(thread, channel_id)?;
 
         Ok(())
     }
@@ -265,6 +290,10 @@ impl LuaState {
         }
 
         Ok(())
+    }
+
+    pub fn async_sender(&self) -> Sender<LuaAsyncCallback> {
+        self.async_sender.clone()
     }
 }
 

@@ -1,8 +1,11 @@
 bot = bot or {}
 bot.cmds = bot.cmds or {}
 bot.aliases = bot.aliases or {}
+bot.reaction_hooks = {}
 
 include("./lib/async.lua")
+include("./lib/pagination.lua")
+include("./lib/string.lua")
 include("./lib/tags.lua")
 
 function bot.think()
@@ -75,15 +78,19 @@ function bot.sub_command(cmd, options)
     return create_command(cmd, options)
 end
 
-function bot.icode_block(msg)
-    return msg.service == "discord" and "``" or ""
+function bot.icode_block(channel, content)
+    local a = channel:supports_feature(bot.FEATURES.Markdown) and "``" or ""
+    return a .. content .. a
+end
+
+function bot.bold_block(channel, content)
+    local a = channel:supports_feature(bot.FEATURES.Markdown) and "**" or ""
+    return a .. content .. a
 end
 
 function bot.help(msg, cmd)
     local usage_options = ""
     local usage_arguments = ""
-
-    local icode_block = bot.icode_block(msg)
 
     local arguments = ""
     local options = ""
@@ -105,9 +112,9 @@ function bot.help(msg, cmd)
             local long = v.long and "--" .. v.long or ""
             options =
                 options ..
-                "   " .. icode_block ..
+                "   " .. bot.icode_block(msg.channel,
                     ((v.short and "-" or "") .. (v.short or "") .. (v.short and ",  " or "")) ..
-                        (long .. string.rep(" ", pad - #long)) .. v.description .. icode_block .. "\n"
+                        (long .. string.rep(" ", pad - #long)) .. v.description) .. "\n"
         end
     end
 
@@ -140,7 +147,7 @@ function bot.help(msg, cmd)
             end
 
             arguments =
-                arguments .. "   " .. icode_block .. name .. string.rep(" ", pad - #name) .. (v.description or "") .. extra .. icode_block .. "\n"
+                arguments .. "   " .. bot.icode_block(msg.channel, name .. string.rep(" ", pad - #name) .. (v.description or "") .. extra) .. "\n"
         end
     end
 
@@ -163,7 +170,7 @@ function bot.help(msg, cmd)
 
         for _, v in ipairs(cmd.sub_commands) do
             sub_commands =
-                sub_commands .. "   " .. icode_block .. v.cmd .. string.rep(" ", pad - #v.cmd) .. (v.description or "") .. icode_block .. "\n"
+                sub_commands .. "   " .. bot.icode_block(msg.channel, v.cmd .. string.rep(" ", pad - #v.cmd) .. (v.description or "")) .. "\n"
         end
     end
 
@@ -171,7 +178,7 @@ function bot.help(msg, cmd)
         get_abs_cmd(cmd) ..
         "\n" ..
             ((cmd.description and cmd.description .. "\n") or "") ..
-                "\n" .. "USAGE:\n   " .. icode_block .. get_abs_cmd(cmd) .. " " .. usage_options .. usage_arguments .. icode_block .. arguments .. options .. sub_commands
+                "\n" .. "USAGE:\n   " .. bot.icode_block(msg.channel, get_abs_cmd(cmd) .. " " .. usage_options .. usage_arguments) .. arguments .. options .. sub_commands
 
     msg:reply(out)
 end
@@ -322,6 +329,12 @@ function bot.on_command(msg, args)
     end
 
     exec_command(msg, cmd, args)
+end
+
+function bot.on_reaction(msg, reactor, reaction, removed)
+    if bot.reaction_hooks[msg.id] then
+        bot.reaction_hooks[msg.id](msg, reactor, reaction, removed)
+    end
 end
 
 include("bot/utils.lua")

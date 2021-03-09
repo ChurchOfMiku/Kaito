@@ -12,6 +12,8 @@ mod http;
 mod state;
 mod utils;
 
+use self::lib::bot::BotUser;
+
 use super::{Module, ModuleKind};
 use crate::{
     bot::Bot,
@@ -144,6 +146,24 @@ impl Module for LuaModule {
         }
     }
 
+    async fn reaction(
+        &self,
+        msg: Arc<dyn Message<impl Service>>,
+        reactor: Arc<dyn User<impl Service>>,
+        reaction: String,
+        remove: bool,
+    ) -> Result<()> {
+        let lua_state = self.get_bot_state().await?;
+        let sender = lua_state.async_sender();
+
+        let bot_msg = BotMessage::from_msg(self.bot.clone(), sender, &msg).await?;
+        let bot_reactor = BotUser::from_user(self.bot.clone(), &reactor).await?;
+
+        lua_state.run_bot_reaction(bot_msg, bot_reactor, reaction, remove)?;
+
+        Ok(())
+    }
+
     async fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> Result<bool> {
         self.settings.enable.value(server_id, channel_id).await
     }
@@ -158,7 +178,8 @@ impl LuaModule {
         let args = parse_shell_args(&rest)?;
 
         let lua_state = self.get_bot_state().await?;
-        let bot_msg = BotMessage::from_msg(self.bot.clone(), &msg).await?;
+        let sender = lua_state.async_sender();
+        let bot_msg = BotMessage::from_msg(self.bot.clone(), sender, &msg).await?;
 
         let res = lua_state.run_bot_command(bot_msg, args);
         drop(lua_state);

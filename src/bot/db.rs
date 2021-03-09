@@ -389,6 +389,23 @@ impl BotDb {
         Ok(count)
     }
 
+    pub async fn list_tags(&self, uid: UserId, server_id: ServerId) -> Result<Vec<String>> {
+        let sid = self.get_sid(server_id).await?;
+
+        #[derive(sqlx::FromRow)]
+        struct TagRes {
+            key: String,
+        }
+
+        let res = sqlx::query_as::<_, TagRes>("SELECT key FROM tags WHERE uid = ? AND sid = ?")
+            .bind(uid)
+            .bind(sid)
+            .fetch_all(self.pool())
+            .await?;
+
+        Ok(res.into_iter().map(|t| t.key).collect())
+    }
+
     pub fn pool(&self) -> &Pool<Sqlite> {
         &self.pool
     }

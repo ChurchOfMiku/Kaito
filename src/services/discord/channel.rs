@@ -2,7 +2,7 @@ use anyhow::Result;
 use serenity::model::channel;
 use std::sync::Arc;
 
-use super::{server::DiscordServer, DiscordError, DiscordService};
+use super::{message::DiscordMessage, server::DiscordServer, DiscordError, DiscordService};
 use crate::{
     message::{MessageContent, ToMessageContent},
     services::{Channel, ChannelId},
@@ -16,6 +16,10 @@ pub struct DiscordChannel {
 impl DiscordChannel {
     pub fn new(channel: channel::Channel, service: Arc<DiscordService>) -> DiscordChannel {
         DiscordChannel { channel, service }
+    }
+
+    pub fn inner(&self) -> &channel::Channel {
+        &self.channel
     }
 }
 
@@ -34,11 +38,11 @@ impl Channel<DiscordService> for DiscordChannel {
         }
     }
 
-    async fn send<'a, C>(&self, content: C) -> Result<()>
+    async fn send<'a, C>(&self, content: C) -> Result<Arc<DiscordMessage>>
     where
         C: ToMessageContent<'a>,
     {
-        match content.to_message_content() {
+        let msg = match content.to_message_content() {
             MessageContent::String(text) => {
                 self.channel
                     .id()
@@ -53,7 +57,7 @@ impl Channel<DiscordService> for DiscordChannel {
             }
         };
 
-        Ok(())
+        Ok(Arc::new(DiscordMessage::new(msg, self.service.clone())))
     }
 
     async fn server(&self) -> Result<Arc<DiscordServer>> {

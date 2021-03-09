@@ -10,7 +10,7 @@ pub mod db;
 use crate::{
     config::Config,
     modules::Modules,
-    services::{Message, Service, Services},
+    services::{Message, Service, Services, User},
 };
 use db::BotDb;
 
@@ -67,6 +67,18 @@ impl Bot {
         let ctx = get_ctx!(self);
 
         ctx.modules().message(msg).await;
+    }
+
+    pub async fn reaction(
+        &self,
+        msg: Arc<dyn Message<impl Service>>,
+        reactor: Arc<dyn User<impl Service>>,
+        reaction: String,
+        remove: bool,
+    ) {
+        let ctx = get_ctx!(self);
+
+        ctx.modules().reaction(msg, reactor, reaction, remove).await;
     }
 }
 

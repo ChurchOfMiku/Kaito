@@ -70,7 +70,7 @@ macro_rules! services {
                 }))
             }
 
-            pub async fn send_message<'a, C>(&self, channel_id: ChannelId, content: C) -> Result<()>
+            pub async fn send_message<'a, C>(&self, channel_id: ChannelId, content: C) -> Result<Arc<dyn Message<impl Service>>>
             where
                 C: ToMessageContent<'a>
             {
@@ -85,13 +85,56 @@ macro_rules! services {
                                 .channel(id)
                                 .await?;
 
-                            channel.send(content).await?;
+                            let msg: Arc<dyn Message<_>> = channel.send(content).await?;
+                            Ok(msg)
                         }
                     ),+
                 }
-
-                Ok(())
             }
+
+            #[allow(unreachable_patterns)]
+            pub async fn edit_message<'a, C>(&self, channel_id: ChannelId, message_id: MessageId, content: C) -> Result<()>
+            where
+                C: ToMessageContent<'a>
+            {
+                match channel_id {
+                    $(
+                        ChannelId::$service_module_ident (id) => {
+                            let message_id = match message_id {
+                                MessageId::$service_module_ident(msg_id) => msg_id,
+                                _ => unreachable!()
+                            };
+
+                            self.$service_ident
+                                .as_ref()
+                                .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                                .service()
+                                .message(id, message_id).await?.edit(content).await
+                        }
+                    ),+
+                }
+            }
+
+            #[allow(unreachable_patterns)]
+            pub async fn delete_message(&self, channel_id: ChannelId, message_id: MessageId) -> Result<()> {
+                match channel_id {
+                    $(
+                        ChannelId::$service_module_ident (id) => {
+                            let message_id = match message_id {
+                                MessageId::$service_module_ident(msg_id) => msg_id,
+                                _ => unreachable!()
+                            };
+
+                            self.$service_ident
+                                .as_ref()
+                                .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                                .service()
+                                .message(id, message_id).await?.delete().await
+                        }
+                    ),+
+                }
+            }
+
 
             pub async fn user(&self, user_id: ServiceUserId) -> Result<Arc<dyn User<impl Service>>> {
                 match user_id {
@@ -109,6 +152,7 @@ macro_rules! services {
                 }
             }
 
+            #[allow(unreachable_patterns)]
             pub async fn find_user(&self, channel_id: ChannelId, find: &str) -> Result<Arc<dyn User<impl Service>>> {
                 if let Some(sep) = find.find(':') {
                     let (before, after) = find.split_at(sep);
@@ -148,12 +192,40 @@ macro_rules! services {
                 )
             }
 
+            #[allow(unreachable_patterns)]
+            pub async fn react(&self, channel_id: ChannelId, message_id: MessageId, reaction: String) -> Result<()> {
+                match channel_id {
+                    $(
+                        ChannelId::$service_module_ident(channel_id) => {
+                            let message_id = match message_id {
+                                MessageId::$service_module_ident(msg_id) => msg_id,
+                                _ => unreachable!()
+                            };
+
+                            self.$service_ident
+                                .as_ref()
+                                .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                                .service()
+                                .react(channel_id, message_id, reaction).await
+                        }
+                    ),+
+                }
+            }
+
             pub fn id_from_kind(kind: ServiceKind) -> &'static str {
                 match kind {
                     $(ServiceKind::$service_module_ident => <$service as Service>::ID),+
                 }
             }
         }
+
+        #[derive(Copy, Clone, Hash, Eq, PartialEq)]
+        pub enum MessageId {
+            $($service_module_ident (<$service as Service>::MessageId)),+
+        }
+
+        service_id_functions!{MessageId, MessageId, $(($service_module_ident, $service)),+}
+
 
         #[derive(Copy, Clone, Hash, Eq, PartialEq)]
         pub enum ChannelId {
@@ -188,6 +260,14 @@ macro_rules! services {
                     _ => None
                 }
             }
+
+            pub fn supports_feature(&self, feature: ServiceFeatures) -> bool {
+                match self {
+                    $(
+                        ServiceKind::$service_module_ident => <$service as Service>::supports_feature(feature)
+                    ),+
+                }
+            }
         }
     };
 }
@@ -206,6 +286,7 @@ pub trait Service: 'static + Sized + Send + Sync {
     type Channel: Channel<Self>;
     type Server: Server<Self>;
 
+    type MessageId;
     type ChannelId;
     type ServerId;
     type UserId;
@@ -214,6 +295,11 @@ pub trait Service: 'static + Sized + Send + Sync {
     async fn unload(&self) -> Result<()>;
 
     async fn current_user(self: &Arc<Self>) -> Result<Arc<Self::User>>;
+    async fn message(
+        self: &Arc<Self>,
+        channel_id: Self::ChannelId,
+        id: Self::MessageId,
+    ) -> Result<Arc<Self::Message>>;
     async fn channel(self: &Arc<Self>, id: Self::ChannelId) -> Result<Arc<Self::Channel>>;
     async fn user(self: &Arc<Self>, get_user: Self::UserId) -> Result<Arc<Self::User>>;
     async fn find_user(
@@ -222,17 +308,29 @@ pub trait Service: 'static + Sized + Send + Sync {
         find: &str,
     ) -> Result<Arc<Self::User>>;
 
+    async fn react(
+        self: &Arc<Self>,
+        channel_id: Self::MessageId,
+        msg_id: Self::MessageId,
+        reaction: String,
+    ) -> Result<()>;
+
     fn kind(&self) -> ServiceKind {
         Self::KIND
+    }
+
+    fn supports_feature(feature: ServiceFeatures) -> bool {
+        Self::FEATURES.contains(feature)
     }
 }
 
 bitflags! {
     pub struct ServiceFeatures: u32 {
-        const EMBEDS = 1;
-        const REACTIONS = 1 << 1;
-        const VOICE = 1 << 2;
-        const MARKDOWN = 1 << 3;
+        const EDIT = 1;
+        const EMBED = 1 << 1;
+        const REACT = 1 << 2;
+        const VOICE = 1 << 3;
+        const MARKDOWN = 1 << 4;
     }
 }
 
@@ -240,8 +338,14 @@ bitflags! {
 pub trait Message<S: Service>: Send + Sync {
     fn author(&self) -> &Arc<S::User>;
     async fn channel(&self) -> Result<Arc<S::Channel>>;
+    async fn edit<'a, C>(&self, content: C) -> Result<()>
+    where
+        Self: Sized,
+        C: ToMessageContent<'a>;
+    async fn delete(&self) -> Result<()>;
     fn content(&self) -> &str;
     fn service(&self) -> &Arc<S>;
+    fn id(&self) -> MessageId;
 }
 
 pub trait User<S: Service>: Send + Sync {
@@ -260,7 +364,7 @@ pub trait User<S: Service>: Send + Sync {
 pub trait Channel<S: Service>: Send + Sync {
     fn id(&self) -> ChannelId;
     fn name(&self) -> String;
-    async fn send<'a, C>(&self, content: C) -> Result<()>
+    async fn send<'a, C>(&self, content: C) -> Result<Arc<S::Message>>
     where
         Self: Sized,
         C: ToMessageContent<'a>;

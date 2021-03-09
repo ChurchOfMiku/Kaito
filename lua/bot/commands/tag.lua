@@ -151,6 +151,62 @@ bot.add_command("tag", {
                 msg:reply("the tag \"" .. msg.channel:escape_text(args.tag) .. "\" has been edited")
             end,
         }),
+        bot.sub_command("list", {
+            args = {
+                {
+                    key = "user",
+                    name = "USER",
+                    description = "User (optional)",
+                },
+                {
+                    key = "page",
+                    name = "PAGE",
+                    description = "Page number",
+                },
+            },
+            description = "List your own or someone else's tags",
+            callback = function(msg, args)
+                local user
+
+                if args.user then
+                    user = bot.find_user(msg.channel, args.user):await()
+                else
+                    user = msg.author
+                end
+
+                if user then
+                   local tag_names = tags.list_tags(user, msg.channel.server):await()
+
+                   table.sort(tag_names, function(a, b) return a < b end)
+
+                   pagination.create(msg.channel, {
+                    title = user.name .. "'s tags",
+                    data = tag_names,
+                    render_data = function(ctx, tag_names)
+                        local content = ""
+
+                        local i = ctx.offset
+        
+                        for _,name in pairs(tag_names) do
+                            if content ~= "" then content = content .. "\n" end
+        
+                            content = content .. i .. ". \"" .. name .. "\""
+
+                            i = i + 1
+                        end
+        
+                        return {
+                            content = content
+                        }
+                    end,
+                    page = args.page,
+                    caller = msg.author
+                })
+                else
+                    msg:reply("error: no user found for \""..msg.channel:escape_text(args.user).."\"")
+                end
+            end,
+        }),
         bot.sub_command("raw", {
             args = {
                 {

@@ -90,6 +90,27 @@ pub fn lib_tags(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
     })?;
     tags_tbl.set("count_user_tags", count_user_tags_fn)?;
 
+    let bot2 = bot.clone();
+    let sender2 = sender.clone();
+    let list_tags_fn = state.create_function(
+        move |state, (user, server): (LuaAnyUserData, LuaAnyUserData)| {
+            let bot = bot2.clone();
+            let user = user.borrow::<BotUser>()?.clone();
+            let server = server.borrow::<BotServer>()?.clone();
+
+            let fut = create_lua_future!(
+                state,
+                sender2,
+                (),
+                bot.db().list_tags(user.uid(), server.id()),
+                |_state, _data: (), res: Result<Vec<String>>| { res }
+            );
+
+            Ok(fut)
+        },
+    )?;
+    tags_tbl.set("list_tags", list_tags_fn)?;
+
     state.globals().set("tags", tags_tbl)?;
 
     Ok(())

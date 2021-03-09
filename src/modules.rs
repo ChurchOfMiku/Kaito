@@ -7,7 +7,7 @@ mod lua;
 use crate::{
     bot::Bot,
     config::Config,
-    services::{ChannelId, Message, ServerId, Service},
+    services::{ChannelId, Message, ServerId, Service, User},
     settings::Settings,
 };
 
@@ -32,6 +32,17 @@ macro_rules! modules_loader {
                 $(
                     if self.$module_ident.is_enabled() {
                         if let Err(err) = self.$module_ident.module().message(msg.clone()).await {
+                            println!("error during executing module {}: {}", self.$module_ident.module().name(), err.to_string())
+                        };
+                    }
+                )+
+            }
+
+            #[allow(dead_code)]
+            pub async fn reaction(&self, msg: Arc<dyn Message<impl Service>>, reactor: Arc<dyn User<impl Service>>, reaction: String, remove: bool) {
+                $(
+                    if self.$module_ident.is_enabled() {
+                        if let Err(err) = self.$module_ident.module().reaction(msg.clone(), reactor.clone(), reaction.clone(), remove).await {
                             println!("error during executing module {}: {}", self.$module_ident.module().name(), err.to_string())
                         };
                     }
@@ -69,6 +80,13 @@ pub trait Module: 'static + Send + Sync + Sized {
 
     // TODO: Move message to type alias when impl's inside type aliases becomes stable
     async fn message(&self, msg: Arc<dyn Message<impl Service>>) -> Result<()>;
+    async fn reaction(
+        &self,
+        msg: Arc<dyn Message<impl Service>>,
+        reactor: Arc<dyn User<impl Service>>,
+        reaction: String,
+        remove: bool,
+    ) -> Result<()>;
 
     async fn enabled(&self, server_id: ServerId, channel_id: ChannelId) -> Result<bool>;
 

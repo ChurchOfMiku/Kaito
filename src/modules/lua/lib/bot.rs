@@ -10,7 +10,8 @@ use crate::{
         Bot, ROLES,
     },
     services::{
-        Channel, ChannelId, Message, Server, ServerId, Service, ServiceKind, Services, User,
+        Channel, ChannelId, Message, MessageId, Server, ServerId, Service, ServiceFeatures,
+        ServiceKind, Services, User,
     },
     settings::SettingContext,
     utils::escape_untrusted_text,
@@ -265,6 +266,16 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
 
     bot_tbl.set("ROLES", ROLES)?;
 
+    let features_tbl = state.create_table()?;
+
+    features_tbl.set("Edit", ServiceFeatures::EDIT.bits())?;
+    features_tbl.set("Embed", ServiceFeatures::EMBED.bits())?;
+    features_tbl.set("React", ServiceFeatures::REACT.bits())?;
+    features_tbl.set("Voice", ServiceFeatures::VOICE.bits())?;
+    features_tbl.set("Markdown", ServiceFeatures::MARKDOWN.bits())?;
+
+    bot_tbl.set("FEATURES", features_tbl)?;
+
     state.globals().set("bot", bot_tbl)?;
 
     Ok(())
@@ -275,6 +286,8 @@ pub struct BotMessage(Arc<BotMessageInner>);
 
 pub struct BotMessageInner {
     bot: Arc<Bot>,
+    sender: Sender<LuaAsyncCallback>,
+    id: MessageId,
     author: BotUser,
     channel: BotChannel,
     content: String,
@@ -284,15 +297,19 @@ pub struct BotMessageInner {
 impl BotMessage {
     pub async fn from_msg(
         bot: Arc<Bot>,
+        sender: Sender<LuaAsyncCallback>,
         msg: &Arc<dyn Message<impl Service>>,
     ) -> Result<BotMessage> {
         let service_user = msg.author().clone() as Arc<dyn User<_>>;
         let author = BotUser::from_user(bot.clone(), &service_user).await?;
         let service_channel = msg.channel().await? as Arc<dyn Channel<_>>;
-        let channel = BotChannel::from_channel(&service_channel).await?;
+        let channel =
+            BotChannel::from_channel(bot.clone(), sender.clone(), &service_channel).await?;
 
         Ok(BotMessage(Arc::new(BotMessageInner {
             bot,
+            sender,
+            id: msg.id(),
             author,
             channel,
             content: msg.content().to_string(),
@@ -326,8 +343,59 @@ impl UserData for BotMessage {
             Ok(())
         });
 
+        methods.add_method("react", |state, msg, reaction: String| {
+            let ctx = msg.0.bot.get_ctx();
+            let channel_id = msg.channel().id();
+            let msg_id = msg.0.id;
+
+            let fut = create_lua_future!(
+                state,
+                msg.0.sender,
+                (),
+                ctx.services().react(channel_id, msg_id, reaction),
+                |_state, _data: (), res: Result<()>| { Ok(res?) }
+            );
+
+            Ok(fut)
+        });
+
+        methods.add_method("edit", |state, msg, content: String| {
+            let ctx = msg.0.bot.get_ctx();
+            let channel_id = msg.channel().id();
+            let msg_id = msg.0.id;
+
+            let fut = create_lua_future!(
+                state,
+                msg.0.sender,
+                (),
+                ctx.services().edit_message(channel_id, msg_id, content),
+                |_state, _data: (), res: Result<()>| { Ok(res?) }
+            );
+
+            Ok(fut)
+        });
+
+        methods.add_method("delete", |state, msg, (): ()| {
+            let ctx = msg.0.bot.get_ctx();
+            let channel_id = msg.channel().id();
+            let msg_id = msg.0.id;
+
+            let fut = create_lua_future!(
+                state,
+                msg.0.sender,
+                (),
+                ctx.services().delete_message(channel_id, msg_id),
+                |_state, _data: (), res: Result<()>| { Ok(res?) }
+            );
+
+            Ok(fut)
+        });
+
         methods.add_meta_method(MetaMethod::Index, |state, msg, index: String| {
             match index.as_str() {
+                "id" => Ok(mlua::Value::String(
+                    state.create_string(&msg.0.id.to_short_str())?,
+                )),
                 "author" => Ok(mlua::Value::UserData(
                     state.create_userdata(msg.author().clone())?,
                 )),
@@ -402,17 +470,25 @@ impl UserData for BotUser {
 pub struct BotChannel(Arc<BotChannelInner>);
 
 pub struct BotChannelInner {
+    bot: Arc<Bot>,
+    sender: Sender<LuaAsyncCallback>,
     id: ChannelId,
     server: BotServer,
     service: ServiceKind,
 }
 
 impl BotChannel {
-    pub async fn from_channel(channel: &Arc<dyn Channel<impl Service>>) -> Result<BotChannel> {
+    pub async fn from_channel(
+        bot: Arc<Bot>,
+        sender: Sender<LuaAsyncCallback>,
+        channel: &Arc<dyn Channel<impl Service>>,
+    ) -> Result<BotChannel> {
         let service_server = channel.server().await? as Arc<dyn Server<_>>;
         let server = BotServer::from_server(&service_server).await?;
 
         Ok(BotChannel(Arc::new(BotChannelInner {
+            bot,
+            sender,
             id: channel.id(),
             server,
             service: channel.service().kind(),
@@ -434,8 +510,37 @@ impl BotChannel {
 
 impl UserData for BotChannel {
     fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
-        methods.add_method("escape_text", |_state, msg, text: String| {
-            Ok(escape_untrusted_text(msg.0.service, text))
+        methods.add_method("escape_text", |_state, chan, text: String| {
+            Ok(escape_untrusted_text(chan.0.service, text))
+        });
+
+        methods.add_method("supports_feature", |_state, chan, bits: u32| {
+            Ok(chan
+                .0
+                .service
+                .supports_feature(ServiceFeatures::from_bits_truncate(bits)))
+        });
+
+        methods.add_method("send", |state, chan, content: String| {
+            let bot = chan.0.bot.clone();
+            let sender = chan.0.sender.clone();
+            let ctx = chan.0.bot.get_ctx();
+            let channel_id = chan.id();
+
+            let fut = create_lua_future!(
+                state,
+                chan.0.sender,
+                (),
+                async move {
+                    match ctx.services().send_message(channel_id, content).await {
+                        Ok(msg) => BotMessage::from_msg(bot, sender, &msg).await,
+                        Err(err) => Err(err),
+                    }
+                },
+                |_state, _data: (), res: Result<BotMessage>| { Ok(res?) }
+            );
+
+            Ok(fut)
         });
 
         methods.add_meta_method(
