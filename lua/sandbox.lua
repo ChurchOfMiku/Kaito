@@ -153,25 +153,27 @@ function sandbox.run(state, source, env)
                         state:error(tostring(res))
                     end)
                     return true
-                elseif res then
-                    sandbox.exec(state, fenv, function()
-                        local out = ""
-        
-                        for k, v in pairs(res) do
-                            out = out .. tostring(v)
-                
-                            if next(res, k) ~= nil then
-                                out = out .. ", "
-                            end
-                        end
-                
-                        state:print(out)
-                    end)
-
-                    state:terminate("done")
                 end
 
                 if not thread or coroutine.status(thread) == "dead" then
+                    if res then
+                        sandbox.exec(state, fenv, function()
+                            local out = ""
+            
+                            for k, v in pairs(res) do
+                                out = out .. tostring(v)
+                    
+                                if next(res, k) ~= nil then
+                                    out = out .. ", "
+                                end
+                            end
+                    
+                            state:print(out)
+                        end)
+    
+                    end
+
+                    state:terminate("done")
                     return true
                 end
             end
@@ -191,8 +193,6 @@ function sandbox.run(state, source, env)
         
                 state:print(out)
             end)
-
-            state:terminate("done")
         end
     else
         sandbox.run(state, function()
