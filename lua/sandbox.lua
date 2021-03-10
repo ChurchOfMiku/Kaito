@@ -1,6 +1,7 @@
 sandbox = sandbox or {tasks = {}}
 
 include("./lib/async.lua")
+json = include("./lib/json.lua")
 
 include("./sandbox/utils.lua")
 include("./sandbox/env.lua")
@@ -105,22 +106,28 @@ function sandbox.async_callback(state, future, success, ...)
     end)
 end
 
-function sandbox.run(state, source)
+function sandbox.run(state, source, env)
     local fenv = update_env(sandbox.env.get_env(), state)
+
+    if env then
+        for k,v in pairs(json.decode(env)) do
+            fenv[k] = v
+        end
+    end
 
     local fn, err
 
     if type(source) == "function" then
         fn = source
     else
-        fn, err = load("print(" .. source .. ")", "", "t", fenv)
+        fn, err = load("return " .. source, "", "t", fenv)
 
         if not fn then
-            fn = load(source, "", "t", fenv)
+            fn, err = load(source, "", "t", fenv)
         end
     
         if not fn then
-            state:error(err)
+            state:error(tostring(err))
             return
         end
     end
@@ -146,6 +153,22 @@ function sandbox.run(state, source)
                         state:error(tostring(res))
                     end)
                     return true
+                elseif res then
+                    sandbox.exec(state, fenv, function()
+                        local out = ""
+        
+                        for k, v in pairs(res) do
+                            out = out .. tostring(v)
+                
+                            if next(res, k) ~= nil then
+                                out = out .. ", "
+                            end
+                        end
+                
+                        state:print(out)
+                    end)
+
+                    state:terminate("done")
                 end
 
                 if not thread or coroutine.status(thread) == "dead" then
@@ -154,6 +177,22 @@ function sandbox.run(state, source)
             end
 
             sandbox.tasks[task_fn] = task_fn
+        elseif res then
+            sandbox.exec(state, fenv, function()
+                local out = ""
+        
+                for k, v in pairs(res) do
+                    out = out .. tostring(v)
+        
+                    if next(res, k) ~= nil then
+                        out = out .. ", "
+                    end
+                end
+        
+                state:print(out)
+            end)
+
+            state:terminate("done")
         end
     else
         sandbox.run(state, function()

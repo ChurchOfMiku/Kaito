@@ -13,7 +13,7 @@ bot.add_command("tag", {
         local tag = tags.find_tag(msg.channel.server, args.tag):await()
 
         if tag then
-            msg:reply(msg.channel:escape_text(tag.value))
+            msg:reply(msg.channel:escape_text(tags.exec_tag(msg, msg.author, msg.channel, tag, extra_args)))
         else
             msg:reply("error: unknown tag")
         end
@@ -36,7 +36,7 @@ bot.add_command("tag", {
             },
             description = "Create a new tag",
             callback = function(msg, args, extra_args)
-                if not tags.IsValidName(args.tag) then
+                if not tags.is_valid_name(args.tag) then
                     return msg:reply("error: the tag name must be alphanumeric")
                 end
 

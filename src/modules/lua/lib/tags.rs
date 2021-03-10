@@ -9,6 +9,79 @@ use super::{
 };
 use crate::bot::{db::Tag, Bot};
 
+#[derive(Debug, PartialEq)]
+enum TagPart {
+    Text(String),
+    Tag(String, String),
+    Var(String),
+}
+
+fn parse_tag(value: &str) -> Vec<TagPart> {
+    let mut out = Vec::new();
+
+    let mut text = String::new();
+    let mut closures_deep = 0;
+    let mut tag = None;
+
+    for c in value.chars() {
+        if c == '{' {
+            if !text.is_empty() && closures_deep == 0 {
+                out.push(TagPart::Text(std::mem::replace(&mut text, String::new())));
+            }
+
+            closures_deep += 1;
+        } else if c == '}' {
+            if closures_deep > 0 {
+                if closures_deep == 1 {
+                    if let Some(tag) = tag.take() {
+                        out.push(TagPart::Tag(
+                            tag,
+                            std::mem::replace(&mut text, String::new()),
+                        ));
+                        closures_deep -= 1;
+                        continue;
+                    }
+
+                    let name = &text[1..];
+
+                    if name.chars().all(|c| c.is_ascii_lowercase()) {
+                        out.push(TagPart::Var(name.to_string()));
+                        text.clear();
+                        closures_deep -= 1;
+                        continue;
+                    }
+                }
+
+                closures_deep -= 1;
+            }
+        } else if c == ':' && closures_deep == 1 && !text.is_empty() {
+            let name = &text[1..];
+
+            if name.chars().all(|c| c.is_ascii_lowercase()) {
+                tag = Some(name.to_string());
+                text.clear();
+                continue;
+            }
+        }
+
+        text.push(c);
+    }
+
+    if let Some(tag) = tag {
+        if !text.is_empty() {
+            out.push(TagPart::Text(text));
+        } else {
+            out.push(TagPart::Text([tag, text].concat()));
+        }
+    } else {
+        if !text.is_empty() {
+            out.push(TagPart::Text(text));
+        }
+    }
+
+    out
+}
+
 pub fn lib_tags(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) -> Result<()> {
     let tags_tbl = state.create_table()?;
 
@@ -110,6 +183,35 @@ pub fn lib_tags(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
         },
     )?;
     tags_tbl.set("list_tags", list_tags_fn)?;
+
+    let parse_tag_fn = state.create_function(move |state, value: String| {
+        let out = state.create_table()?;
+
+        for (i, tag_part) in parse_tag(&value).into_iter().enumerate() {
+            let i = i + 1;
+            match tag_part {
+                TagPart::Text(text) => out.raw_insert(i as i64, text)?,
+                TagPart::Tag(tag, value) => {
+                    let tbl = state.create_table()?;
+
+                    tbl.set("tag", tag)?;
+                    tbl.set("value", value)?;
+
+                    out.raw_insert(i as i64, tbl)?
+                }
+                TagPart::Var(var) => {
+                    let tbl = state.create_table()?;
+
+                    tbl.set("var", var)?;
+
+                    out.raw_insert(i as i64, tbl)?
+                }
+            }
+        }
+
+        Ok(out)
+    })?;
+    tags_tbl.set("parse_tag", parse_tag_fn)?;
 
     state.globals().set("tags", tags_tbl)?;
 
@@ -222,5 +324,27 @@ impl UserData for LuaTag {
                 _ => Ok(mlua::Value::Nil),
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_tag, TagPart};
+
+    #[test]
+    fn parse_tag_test() {
+        let parts = parse_tag("text {a:b} aaa {test} b {c: a{}b}");
+
+        assert_eq!(
+            parts,
+            vec![
+                TagPart::Text("text ".into()),
+                TagPart::Tag("a".into(), "b".into()),
+                TagPart::Text(" aaa ".into()),
+                TagPart::Var("test".into()),
+                TagPart::Text(" b ".into()),
+                TagPart::Tag("c".into(), " a{}b".into())
+            ]
+        )
     }
 }

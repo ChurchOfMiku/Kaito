@@ -1,9 +1,13 @@
 use anyhow::Result;
-use crossbeam::channel::Sender;
-use mlua::{prelude::*, Error as LuaError, Lua, MetaMethod, UserData, UserDataMethods};
-use std::sync::Arc;
+use async_mutex::Mutex;
+use crossbeam::channel::{Sender, TryRecvError};
+use mlua::{prelude::*, Error as LuaError, Lua, MetaMethod, Table, UserData, UserDataMethods};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use super::super::state::LuaAsyncCallback;
+use super::super::state::{LuaAsyncCallback, LuaState, SandboxMsg, SandboxTerminationReason};
 use crate::{
     bot::{
         db::{User as DbUser, UserId},
@@ -11,13 +15,18 @@ use crate::{
     },
     services::{
         Channel, ChannelId, Message, MessageId, Server, ServerId, Service, ServiceFeatures,
-        ServiceKind, Services, User,
+        ServiceKind, ServiceUserId, Services, User,
     },
     settings::SettingContext,
     utils::escape_untrusted_text,
 };
 
-pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) -> Result<()> {
+pub fn lib_bot(
+    state: &Lua,
+    bot: &Arc<Bot>,
+    sender: Sender<LuaAsyncCallback>,
+    sandbox_state: Arc<Mutex<LuaState>>,
+) -> Result<()> {
     let bot_tbl = state.create_table()?;
 
     let bot2 = bot.clone();
@@ -73,6 +82,7 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
                 Ok(BotUser(
                     Arc::new(BotUserInner {
                         name: service_user.name().to_string(),
+                        id: service_user.id(),
                         restricted,
                     }),
                     Arc::new(user),
@@ -121,6 +131,7 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
                     Ok(BotUser(
                         Arc::new(BotUserInner {
                             name: service_user.name().to_string(),
+                            id: service_user.id(),
                             restricted,
                         }),
                         Arc::new(user),
@@ -218,6 +229,7 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
     bot_tbl.set("list_settings", list_settings_fn)?;
 
     let bot2 = bot.clone();
+    let sender2 = sender.clone();
     let set_setting_fn = state.create_function(
         move |state,
               (msg, server, module, setting, value): (
@@ -242,7 +254,7 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
 
             let fut = create_lua_future!(
                 state,
-                sender,
+                sender2,
                 (),
                 module_settings.set_setting(
                     if server {
@@ -263,6 +275,88 @@ pub fn lib_bot(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) ->
         },
     )?;
     bot_tbl.set("set_setting", set_setting_fn)?;
+
+    let run_sandboxed_lua_fn = state.create_function(
+        move |state,
+              (user, code, env): (
+            LuaAnyUserData,
+            String,
+            Table
+        )| {
+            let sandbox_state = sandbox_state.clone();
+
+            let _user = user.borrow::<BotUser>()?.clone();
+
+            let env_encoded: String = serde_json::to_string(&LuaValue::Table(env))
+                .map_err(|err| LuaError::ExternalError(Arc::new(err)))?;
+
+            let fut = create_lua_future!(
+                state,
+                sender,
+                (),
+                async move {
+                    let lua_state = sandbox_state.lock_arc().await;
+
+                    let (_sandbox_state, recv) = match lua_state.run_sandboxed(&code, Some(env_encoded)) {
+                        Ok(recv) => recv,
+                        Err(err) => {
+                            return Err(anyhow::anyhow!(err.to_string()));
+                        }
+                    };
+
+                    drop(lua_state);
+
+                    let mut out_str = String::new();
+                    let start = Instant::now();
+
+                    loop {
+                        if start.elapsed() > Duration::from_secs(2) {
+                            break;
+                        }
+
+                        match recv.try_recv() {
+                            Ok(out) => match out {
+                                SandboxMsg::Out(o) => {
+                                    out_str.push_str(&o);
+                                }
+                                SandboxMsg::Error(err) => {
+                                    return Err(anyhow::anyhow!(err));
+                                }
+                                SandboxMsg::Terminated(reason) => {
+                                    match reason {
+                                        SandboxTerminationReason::Done => {
+                                            break
+                                        },
+                                        SandboxTerminationReason::ExecutionQuota => {
+                                            return Err(anyhow::anyhow!("Execution quota exceeded, terminated execution"));
+                                        }
+                                        SandboxTerminationReason::TimeLimit => {
+                                            return Err(anyhow::anyhow!("Execution time limit reached, terminated execution"));
+                                        }
+                                    }
+                                }
+                            },
+                            Err(TryRecvError::Empty) => {
+                                tokio::time::sleep(Duration::from_millis(50)).await;
+                            }
+                            Err(TryRecvError::Disconnected) => break,
+                        }
+                    }
+
+                    Ok(out_str)
+                },
+                |state, _data: (), res: Result<String>| {
+                    match res {
+                        Ok(res) => Ok(LuaMultiValue::from_vec(vec![LuaValue::Nil, LuaValue::String(state.create_string(&res)?)])),
+                        Err(err) => Ok(LuaMultiValue::from_vec(vec![LuaValue::String(state.create_string(&err.to_string())?)])),
+                    }
+                }
+            );
+
+            Ok(fut)
+        },
+    )?;
+    bot_tbl.set("run_sandboxed_lua", run_sandboxed_lua_fn)?;
 
     bot_tbl.set("ROLES", ROLES)?;
 
@@ -431,6 +525,7 @@ impl BotUser {
         Ok(BotUser(
             Arc::new(BotUserInner {
                 name: service_user.name().to_string(),
+                id: service_user.id(),
                 restricted,
             }),
             Arc::new(user),
@@ -444,6 +539,7 @@ impl BotUser {
 
 pub struct BotUserInner {
     name: String,
+    id: ServiceUserId,
     restricted: bool,
 }
 
@@ -452,6 +548,9 @@ impl UserData for BotUser {
         methods.add_meta_method(
             MetaMethod::Index,
             |state, user, index: String| match index.as_str() {
+                "id" => Ok(mlua::Value::String(
+                    state.create_string(user.0.id.to_str().as_bytes())?,
+                )),
                 "uid" => Ok(mlua::Value::Number(user.1.uid as f64)),
                 "name" => Ok(mlua::Value::String(
                     state.create_string(user.0.name.as_bytes())?,

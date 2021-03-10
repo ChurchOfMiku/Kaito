@@ -52,8 +52,12 @@ impl Module for LuaModule {
     type ModuleSettings = LuaModuleSettings;
 
     async fn load(bot: Arc<Bot>, _config: ()) -> Result<Arc<LuaModule>> {
-        let bot_state = Arc::new(Mutex::new(LuaState::create_state(&bot, false)?));
-        let sandbox_state = Arc::new(Mutex::new(LuaState::create_state(&bot, true)?));
+        let sandbox_state = Arc::new(Mutex::new(LuaState::create_state(&bot, true, None)?));
+        let bot_state = Arc::new(Mutex::new(LuaState::create_state(
+            &bot,
+            false,
+            Some(sandbox_state.clone()),
+        )?));
 
         let bot_state2 = bot_state.clone();
         let sandbox_state2 = sandbox_state.clone();
@@ -192,7 +196,7 @@ impl LuaModule {
     }
 
     async fn restart_sandbox(&self) -> Result<()> {
-        *self.get_sandbox_state().await? = LuaState::create_state(&self.bot, true)?;
+        *self.get_sandbox_state().await? = LuaState::create_state(&self.bot, true, None)?;
 
         Ok(())
     }
@@ -207,7 +211,7 @@ impl LuaModule {
 
         let lua_state = self.get_sandbox_state().await?;
 
-        let (sandbox_state, recv) = match lua_state.run_sandboxed(&code) {
+        let (sandbox_state, recv) = match lua_state.run_sandboxed(&code, None) {
             Ok(recv) => recv,
             Err(_err) => {
                 return Ok(());
@@ -252,6 +256,7 @@ impl LuaModule {
                     }
                     SandboxMsg::Terminated(reason) => {
                         match reason {
+                            SandboxTerminationReason::Done => break,
                             SandboxTerminationReason::ExecutionQuota => {
                                 msg.channel()
                                     .await?

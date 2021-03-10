@@ -1,4 +1,5 @@
 use anyhow::Result;
+use async_mutex::Mutex;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use governor::{
     clock::QuantaClock,
@@ -7,7 +8,7 @@ use governor::{
 };
 use mlua::{
     prelude::{LuaError, LuaMultiValue, LuaValue},
-    Function, Lua, RegistryKey, StdLib, Table, Thread, ThreadStatus, ToLua, UserData,
+    Function, Lua, LuaSerdeExt, RegistryKey, StdLib, Table, Thread, ThreadStatus, ToLua, UserData,
     UserDataMethods,
 };
 use paste::paste;
@@ -59,7 +60,11 @@ pub struct LuaState {
 }
 
 impl LuaState {
-    pub fn create_state(bot: &Arc<Bot>, sandbox: bool) -> Result<LuaState> {
+    pub fn create_state(
+        bot: &Arc<Bot>,
+        sandbox: bool,
+        sandbox_state: Option<Arc<Mutex<LuaState>>>,
+    ) -> Result<LuaState> {
         // Avoid loading os and io
         let inner = unsafe {
             Lua::unsafe_new_with(
@@ -84,7 +89,12 @@ impl LuaState {
         if sandbox {
             include_lua(&inner, &lua_root_path, "sandbox.lua")?;
         } else {
-            lib_bot(&inner, bot, async_sender.clone())?;
+            lib_bot(
+                &inner,
+                bot,
+                async_sender.clone(),
+                sandbox_state.expect("sandbox state for bot state"),
+            )?;
             lib_tags(&inner, bot, async_sender.clone())?;
             inner.set_named_registry_value("__ASYNC_THREADS", inner.create_table()?)?;
             inner.set_named_registry_value("__ASYNC_THREADS_CHANNELS", inner.create_table()?)?;
@@ -158,6 +168,7 @@ impl LuaState {
     pub fn run_sandboxed(
         &self,
         source: &str,
+        env_encoded: Option<String>,
     ) -> Result<(Arc<SandboxStateInner>, Receiver<SandboxMsg>)> {
         let sandbox_tbl: Table = self.inner.globals().get("sandbox")?;
         let run_fn: Function = sandbox_tbl.get("run")?;
@@ -180,7 +191,12 @@ impl LuaState {
         self.inner
             .set_named_registry_value("__SANDBOX_STATE", sandbox_state.clone())?;
 
-        run_fn.call((sandbox_state.clone(), source))?;
+        if let Some(env_encoded) = env_encoded {
+            let env = self.inner.to_value(&env_encoded)?;
+            run_fn.call((sandbox_state.clone(), source, env))?;
+        } else {
+            run_fn.call((sandbox_state.clone(), source))?;
+        }
 
         Ok((sandbox_state.0, receiver))
     }
@@ -295,6 +311,10 @@ impl LuaState {
     pub fn async_sender(&self) -> Sender<LuaAsyncCallback> {
         self.async_sender.clone()
     }
+
+    pub fn inner(&self) -> &Lua {
+        &self.inner
+    }
 }
 
 pub enum SandboxMsg {
@@ -304,6 +324,7 @@ pub enum SandboxMsg {
 }
 
 pub enum SandboxTerminationReason {
+    Done,
     ExecutionQuota,
     TimeLimit,
 }
@@ -370,6 +391,7 @@ impl UserData for SandboxState {
 
         methods.add_method("terminate", |_, this, value: String| {
             let reason = match value.as_ref() {
+                "done" => SandboxTerminationReason::Done,
                 "exec" => SandboxTerminationReason::ExecutionQuota,
                 "time" => SandboxTerminationReason::TimeLimit,
                 _ => {

@@ -83,6 +83,12 @@ function bot.icode_block(channel, content)
     return a .. content .. a
 end
 
+function bot.code_block(channel, content)
+    local a = channel:supports_feature(bot.FEATURES.Markdown) and "```\n" or ""
+    local b = channel:supports_feature(bot.FEATURES.Markdown) and "\n```" or ""
+    return a .. content .. b
+end
+
 function bot.bold_block(channel, content)
     local a = channel:supports_feature(bot.FEATURES.Markdown) and "**" or ""
     return a .. content .. a
