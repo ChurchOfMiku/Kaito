@@ -17,7 +17,9 @@ use self::lib::bot::BotUser;
 use super::{Module, ModuleKind};
 use crate::{
     bot::Bot,
-    services::{Channel, ChannelId, Message, Server, ServerId, Service, ServiceKind, User},
+    services::{
+        Channel, ChannelId, Message, Server, ServerId, Service, ServiceFeatures, ServiceKind, User,
+    },
     settings::prelude::*,
     utils::{escape_untrusted_text, shell_parser::parse_shell_args},
 };
@@ -179,7 +181,12 @@ impl Module for LuaModule {
 
 impl LuaModule {
     async fn on_command(&self, msg: Arc<dyn Message<impl Service>>, rest: String) -> Result<()> {
-        let args = parse_shell_args(&rest)?;
+        let args = parse_shell_args(
+            msg.service()
+                .kind()
+                .supports_feature(ServiceFeatures::MARKDOWN),
+            &rest,
+        )?;
 
         let lua_state = self.get_bot_state().await?;
         let sender = lua_state.async_sender();
@@ -254,24 +261,23 @@ impl LuaModule {
                                 .await?;
                         }
                     }
-                    SandboxMsg::Terminated(reason) => {
-                        match reason {
-                            SandboxTerminationReason::Done => break,
-                            SandboxTerminationReason::ExecutionQuota => {
-                                msg.channel()
-                                    .await?
-                                    .send("Execution quota exceeded, terminated execution")
-                                    .await?;
-                            }
-                            SandboxTerminationReason::TimeLimit => {
-                                msg.channel()
-                                    .await?
-                                    .send("Execution time limit reached, terminated execution")
-                                    .await?;
-                            }
+                    SandboxMsg::Terminated(reason) => match reason {
+                        SandboxTerminationReason::Done => {}
+                        SandboxTerminationReason::ExecutionQuota => {
+                            msg.channel()
+                                .await?
+                                .send("Execution quota exceeded, terminated execution")
+                                .await?;
+                            break;
                         }
-                        break;
-                    }
+                        SandboxTerminationReason::TimeLimit => {
+                            msg.channel()
+                                .await?
+                                .send("Execution time limit reached, terminated execution")
+                                .await?;
+                            break;
+                        }
+                    },
                 },
                 Err(TryRecvError::Empty) => {
                     tokio::time::sleep(Duration::from_millis(50)).await;

@@ -23,15 +23,20 @@ enum ParseState {
     Escape(Quote),
 }
 
-pub fn parse_shell_args(text: &str) -> Result<Vec<String>, ArgsError> {
+pub fn parse_shell_args(markdown: bool, text: &str) -> Result<Vec<String>, ArgsError> {
     let mut args = Vec::new();
     let mut arg = String::new();
     let mut state = ParseState::Start;
 
-    let mut chars = text.chars();
+    let mut chars = text.chars().enumerate();
+
+    let mut prev_char = None;
 
     loop {
-        let c = chars.next();
+        let (c, offset) = match chars.next() {
+            Some((offset, c)) => (Some(c), offset),
+            None => (None, text.chars().count()),
+        };
 
         state = match state {
             ParseState::Start => match c {
@@ -39,6 +44,31 @@ pub fn parse_shell_args(text: &str) -> Result<Vec<String>, ArgsError> {
                 Some('\'') => ParseState::Arg(Quote::SingleQuoted),
                 Some('\"') => ParseState::Arg(Quote::DoubleQuoted),
                 Some('\\') => ParseState::Escape(Quote::Unquoted),
+                Some('`') if markdown => {
+                    if prev_char.is_none() || prev_char == Some('\n') || prev_char == Some(' ') {
+                        let rest = &text[offset..];
+                        if rest.starts_with("```") {
+                            if let Some(end) = rest.find("\n```") {
+                                args.push(rest[3..end].into());
+
+                                for _ in 0..(end + 3) {
+                                    prev_char = chars.next().map(|(_, c)| c);
+                                }
+
+                                ParseState::Start
+                            } else {
+                                arg.push('`');
+                                ParseState::Arg(Quote::Unquoted)
+                            }
+                        } else {
+                            arg.push('`');
+                            ParseState::Arg(Quote::Unquoted)
+                        }
+                    } else {
+                        arg.push('`');
+                        ParseState::Arg(Quote::Unquoted)
+                    }
+                }
                 Some('\t') | Some(' ') => ParseState::Start,
                 Some(c) => {
                     arg.push(c);
@@ -81,7 +111,9 @@ pub fn parse_shell_args(text: &str) -> Result<Vec<String>, ArgsError> {
                     ParseState::Arg(quote)
                 }
             },
-        }
+        };
+
+        prev_char = c;
     }
 
     Ok(args)
