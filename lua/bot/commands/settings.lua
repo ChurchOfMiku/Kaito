@@ -13,7 +13,6 @@ bot.add_command("settings", {
             description = "List the settings for the module",
             callback = function(msg, args)
                 local module_settings = bot.list_settings(args.module)
-                local icode_block = bot.icode_block(msg)
 
                 if not module_settings then
                     return msg:reply("unknown module")
@@ -29,7 +28,7 @@ bot.add_command("settings", {
                 local pad = min_len + 3
                 for _, v in ipairs(module_settings) do
                     out =
-                        out .. "   " .. icode_block .. v.name .. string.rep(" ", pad - #v.name) .. v.help .. icode_block .. "\n"
+                        out .. "   " .. bot.icode_block(msg.channel, v.name .. string.rep(" ", pad - #v.name) .. v.help) .. "\n"
                 end
 
                 msg:reply(out)
