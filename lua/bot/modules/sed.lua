@@ -1,11 +1,19 @@
-local buffer = RingBuffer(12)
+sed = sed or {}
+sed.channels = sed.channels or {}
 
 hooks.add("message", "sed", function(msg)
+    local channel_buffer = sed.channels[msg.channel.id]
+
+    if not channel_buffer then
+        sed.channels[msg.channel.id] = RingBuffer(12)
+        channel_buffer = sed.channels[msg.channel.id]
+    end
+
     local find, replace = string.match(msg.content, "^sed/(.*)/(.*)/$")
 
     if find then
-        for i=buffer:get_size(), 1, -1  do
-            local prev_msg = buffer:get(i)
+        for i=channel_buffer:get_size(), 1, -1  do
+            local prev_msg = channel_buffer:get(i)
             
             if string.find(prev_msg.content, find) then
                 local replaced = string.gsub(prev_msg.content, find, replace)
@@ -15,6 +23,6 @@ hooks.add("message", "sed", function(msg)
             end
         end
     else
-        buffer:push(msg)
+        channel_buffer:push(msg)
     end
 end)
