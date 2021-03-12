@@ -82,6 +82,7 @@ pub fn lib_bot(
                 Ok(BotUser(
                     Arc::new(BotUserInner {
                         name: service_user.name().to_string(),
+                        nick: service_user.nick().to_string(),
                         id: service_user.id(),
                         restricted,
                     }),
@@ -131,6 +132,7 @@ pub fn lib_bot(
                     Ok(BotUser(
                         Arc::new(BotUserInner {
                             name: service_user.name().to_string(),
+                            nick: service_user.nick().to_string(),
                             id: service_user.id(),
                             restricted,
                         }),
@@ -525,6 +527,7 @@ impl BotUser {
         Ok(BotUser(
             Arc::new(BotUserInner {
                 name: service_user.name().to_string(),
+                nick: service_user.nick().to_string(),
                 id: service_user.id(),
                 restricted,
             }),
@@ -539,6 +542,7 @@ impl BotUser {
 
 pub struct BotUserInner {
     name: String,
+    nick: String,
     id: ServiceUserId,
     restricted: bool,
 }
@@ -554,6 +558,9 @@ impl UserData for BotUser {
                 "uid" => Ok(mlua::Value::Number(user.1.uid as f64)),
                 "name" => Ok(mlua::Value::String(
                     state.create_string(user.0.name.as_bytes())?,
+                )),
+                "nick" => Ok(mlua::Value::String(
+                    state.create_string(user.0.nick.as_bytes())?,
                 )),
                 "role" => Ok(mlua::Value::String(
                     state.create_string(user.1.role.as_bytes())?,

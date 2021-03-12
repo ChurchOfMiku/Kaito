@@ -146,6 +146,19 @@ impl LuaState {
         Ok(())
     }
 
+    pub fn run_bot_message(&self, msg: BotMessage) -> Result<()> {
+        let sandbox_tbl: Table = self.inner.globals().get("bot")?;
+        let on_message_fn: Function = sandbox_tbl.get("on_message")?;
+
+        let thread = self.inner.create_thread(on_message_fn)?;
+        let channel_id = msg.channel().id();
+        thread.resume(msg)?;
+
+        self.create_async_thread(thread, channel_id)?;
+
+        Ok(())
+    }
+
     pub fn run_bot_reaction(
         &self,
         msg: BotMessage,

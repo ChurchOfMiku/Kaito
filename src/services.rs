@@ -351,6 +351,7 @@ pub trait Message<S: Service>: Send + Sync {
 pub trait User<S: Service>: Send + Sync {
     fn id(&self) -> ServiceUserId;
     fn name(&self) -> &str;
+    fn nick(&self) -> &str;
     fn avatar(&self) -> &Option<String> {
         &None
     }

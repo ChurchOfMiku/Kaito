@@ -125,6 +125,14 @@ impl Module for LuaModule {
             None => {}
         };
 
+        {
+            let lua_state = self.get_bot_state().await?;
+            let sender = lua_state.async_sender();
+
+            let bot_msg = BotMessage::from_msg(self.bot.clone(), sender, &msg).await?;
+            lua_state.run_bot_message(bot_msg)?;
+        }
+
         let lua_prefix = self
             .settings
             .lua_prefix

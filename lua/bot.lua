@@ -4,9 +4,11 @@ bot.aliases = bot.aliases or {}
 bot.reaction_hooks = {}
 
 include("./lib/async.lua")
+include("./lib/hooks.lua")
 include("./lib/pagination.lua")
 include("./lib/string.lua")
 include("./lib/tags.lua")
+RingBuffer = include("./lib/ring_buffer.lua")
 
 function bot.think()
 end
@@ -337,6 +339,10 @@ function bot.on_command(msg, args)
     exec_command(msg, cmd, args)
 end
 
+function bot.on_message(msg)
+    hooks.call("message", msg)
+end
+
 function bot.on_reaction(msg, reactor, reaction, removed)
     if bot.reaction_hooks[msg.id] then
         bot.reaction_hooks[msg.id](msg, reactor, reaction, removed)
@@ -345,3 +351,4 @@ end
 
 include("bot/utils.lua")
 include("bot/commands/**/*.lua")
+include("bot/modules/**/*.lua")
