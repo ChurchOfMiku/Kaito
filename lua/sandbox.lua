@@ -193,6 +193,8 @@ function sandbox.run(state, source, env)
         
                 state:print(out)
             end)
+
+            state:terminate("done")
         end
     else
         sandbox.run(state, function()
