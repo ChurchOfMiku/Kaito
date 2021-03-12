@@ -3,7 +3,8 @@ sandbox.env = sandbox.env or {}
 sandbox.env.base_env = {
     _VERSION = _VERSION,
     os = {
-        clock = os.clock
+        clock = os.clock,
+        time = os.time
     },
     async = sandbox.utils.deepcopy(async),
     math = sandbox.utils.deepcopy(math),
