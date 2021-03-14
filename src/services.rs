@@ -92,6 +92,24 @@ macro_rules! services {
                 }
             }
 
+            pub async fn send_typing(&self, channel_id: ChannelId) -> Result<()> {
+                match channel_id {
+                    $(
+                        ChannelId::$service_module_ident (id) => {
+                            let channel = self
+                                .$service_ident
+                                .as_ref()
+                                .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                                .service()
+                                .channel(id)
+                                .await?;
+
+                            channel.send_typing().await
+                        }
+                    ),+
+                }
+            }
+
             #[allow(unreachable_patterns)]
             pub async fn edit_message<'a, C>(&self, channel_id: ChannelId, message_id: MessageId, content: C) -> Result<()>
             where
@@ -370,6 +388,7 @@ pub trait Channel<S: Service>: Send + Sync {
         Self: Sized,
         C: ToMessageContent<'a>;
     async fn server(&self) -> Result<Arc<S::Server>>;
+    async fn send_typing(&self) -> Result<()>;
     fn service(&self) -> &Arc<S>;
 }
 

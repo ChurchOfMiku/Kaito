@@ -1,9 +1,10 @@
-use futures::TryStreamExt;
-use hyper::{Body, Client, Request, Response};
+use crossbeam::channel::Sender;
+use futures::{StreamExt, TryStreamExt};
+use hyper::{body::Bytes, Body, Client, Request, Response};
 use hyper_tls::HttpsConnector;
 use mlua::{
     prelude::{LuaError, LuaMultiValue, LuaTable},
-    Lua,
+    Lua, Table, Value,
 };
 use std::{
     net::IpAddr,
@@ -11,7 +12,7 @@ use std::{
 };
 use thiserror::Error;
 
-use super::state::SandboxState;
+use super::state::{LuaAsyncCallback, SandboxState};
 
 pub fn http_fetch<'a>(
     state: &'a Lua,
@@ -159,6 +160,210 @@ pub fn http_fetch<'a>(
     );
 
     Ok(fut)
+}
+
+// bot state only
+pub fn lib_http(state: &Lua, sender: Sender<LuaAsyncCallback>) -> anyhow::Result<()> {
+    let http = state.create_table()?;
+
+    // http.fetch
+    let sender2 = sender.clone();
+    let http_fetch = state.create_function(move |state, (url, options): (String, Table)| {
+        let sender = sender2.clone();
+
+        let url = match url::Url::parse(&url) {
+            Ok(url) => url,
+            Err(err) => {
+                return Err(LuaError::ExternalError(Arc::new(
+                    HttpError::ErrorParsingUrl(err.to_string()),
+                )));
+            }
+        };
+
+        match url.scheme() {
+            "http" | "https" => {}
+            _ => {
+                return Err(LuaError::ExternalError(Arc::new(HttpError::UnknownScheme(
+                    url.scheme().into(),
+                ))));
+            }
+        }
+
+        let addrs = match url.socket_addrs(|| Some(if url.scheme() == "https" { 443 } else { 80 }))
+        {
+            Ok(addrs) => addrs,
+            Err(err) => {
+                return Err(LuaError::ExternalError(Arc::new(
+                    HttpError::ErrorResolvingHosts(err.to_string()),
+                )));
+            }
+        };
+
+        let disallowed_addr = addrs.iter().find(|addr| {
+            let ip = addr.ip();
+            ip.is_multicast()
+                || ip.is_unspecified()
+                || (match ip {
+                    IpAddr::V4(ip) => match ip.octets() {
+                        [10, ..] => true,
+                        [172, b, ..] if b >= 16 && b <= 31 => true,
+                        [192, 168, ..] => true,
+                        _ => false,
+                    },
+                    IpAddr::V6(_) => false, // IPv6 should be disabled in networking
+                })
+        });
+
+        if let Some(disallowed_addr) = disallowed_addr {
+            return Err(LuaError::ExternalError(Arc::new(
+                HttpError::DisallowedAddress(disallowed_addr.to_string()),
+            )));
+        }
+
+        let https = HttpsConnector::new();
+        let client = Client::builder().build::<_, Body>(https);
+
+        let url = url.to_string();
+        let req = match Request::builder().method("GET").uri(url.clone()).body(
+            if let Ok(body) = options.get::<&str, String>("body") {
+                body.into()
+            } else {
+                Body::empty()
+            },
+        ) {
+            Ok(req) => req,
+            Err(err) => {
+                return Err(LuaError::ExternalError(Arc::new(
+                    HttpError::ErrorBuildingRequest(err.to_string()),
+                )));
+            }
+        };
+
+        let fut = if options.get::<&str, bool>("stream").unwrap_or(false) {
+            create_lua_future!(
+                state,
+                sender,
+                (url, sender.clone()),
+                async move {
+                    match client.request(req).await {
+                        Ok(mut res) => Ok(res),
+                        Err(err) => Err(err),
+                    }
+                },
+                |state,
+                 data: (String, Sender<LuaAsyncCallback>),
+                 res: Result<Response<Body>, hyper::Error>| {
+                    let res = res?;
+                    let (url, sender) = data;
+
+                    let tbl: LuaTable = state.create_table()?;
+                    let headers_tbl: LuaTable = state.create_table()?;
+
+                    for (header_name, header_value) in res.headers() {
+                        headers_tbl.set(
+                            header_name.as_str(),
+                            state.create_string(&header_value.as_bytes())?,
+                        )?;
+                    }
+
+                    tbl.set("headers", headers_tbl)?;
+                    tbl.set("ok", res.status().is_success())?;
+                    tbl.set("redirected", res.status().is_redirection())?;
+                    tbl.set("status", res.status().as_u16())?;
+                    tbl.set("statusText", res.status().canonical_reason())?;
+                    tbl.set("url", state.create_string(&url)?)?;
+
+                    fn create_next_body(state: &Lua, sender: Sender<LuaAsyncCallback>, mut body: Body) -> anyhow::Result<LuaTable> {
+                        Ok(create_lua_future!(
+                            state,
+                            sender,
+                            sender,
+                            async move {
+                                let bytes = body.next().await;
+
+                                (body, bytes)
+                            },
+                            |state, sender: Sender<LuaAsyncCallback>, res: (Body, Option<Result<Bytes, hyper::Error>>)| {
+                                if let Some(data) = res.1 {
+                                    let data = data?;
+
+                                    let tbl: LuaTable = state.create_table()?;
+
+                                    tbl.set("body", state.create_string(&data.to_vec())?)?;
+                                    tbl.set("next_body", create_next_body(state, sender, res.0)?)?;
+
+                                    Ok(LuaMultiValue::from_vec(vec![Value::Table(tbl)]))
+                                } else {
+                                    Ok(LuaMultiValue::default())
+                                }
+                            }
+                        ))
+                    }
+
+                    tbl.set(
+                        "next_body",
+                        create_next_body(state, sender, res.into_body())?
+                    )?;
+
+                    Ok(tbl)
+                }
+            )
+        } else {
+            create_lua_future!(
+                state,
+                sender,
+                (url,),
+                async move {
+                    match client.request(req).await {
+                        Ok(mut res) => {
+                            let body = res
+                                .body_mut()
+                                .try_fold(Vec::new(), |mut data, chunk| async move {
+                                    data.extend_from_slice(&chunk);
+                                    Ok(data)
+                                })
+                                .await
+                                .unwrap_or_default();
+
+                            Ok((res, body))
+                        }
+                        Err(err) => Err(err),
+                    }
+                },
+                |state, data: (String,), res: Result<(Response<Body>, Vec<u8>), hyper::Error>| {
+                    let (res, body) = res?;
+                    let (url,) = data;
+
+                    let tbl: LuaTable = state.create_table()?;
+                    let headers_tbl: LuaTable = state.create_table()?;
+
+                    for (header_name, header_value) in res.headers() {
+                        headers_tbl.set(
+                            header_name.as_str(),
+                            state.create_string(&header_value.as_bytes())?,
+                        )?;
+                    }
+
+                    tbl.set("headers", headers_tbl)?;
+                    tbl.set("ok", res.status().is_success())?;
+                    tbl.set("redirected", res.status().is_redirection())?;
+                    tbl.set("status", res.status().as_u16())?;
+                    tbl.set("statusText", res.status().canonical_reason())?;
+                    tbl.set("url", state.create_string(&url)?)?;
+                    tbl.set("body", state.create_string(&body)?)?;
+
+                    Ok(tbl)
+                }
+            )
+        };
+
+        Ok(fut)
+    })?;
+    http.set("fetch", http_fetch)?;
+
+    state.globals().set("http", http)?;
+
+    Ok(())
 }
 
 #[derive(Debug, Error)]

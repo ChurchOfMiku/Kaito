@@ -1,5 +1,5 @@
 use anyhow::Result;
-use serenity::model::channel;
+use serenity::{http::CacheHttp, model::channel};
 use std::sync::Arc;
 
 use super::{message::DiscordMessage, server::DiscordServer, DiscordError, DiscordService};
@@ -73,6 +73,16 @@ impl Channel<DiscordService> for DiscordChannel {
         }
 
         Err(DiscordError::CacheMiss.into())
+    }
+
+    async fn send_typing(&self) -> Result<()> {
+        self.service()
+            .cache_and_http()
+            .http
+            .broadcast_typing(*self.channel.id().as_u64())
+            .await?;
+
+        Ok(())
     }
 
     fn service(&self) -> &Arc<DiscordService> {

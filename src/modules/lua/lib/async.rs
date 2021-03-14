@@ -29,14 +29,14 @@ macro_rules! create_lua_future {
             Err(err) => {
                 return Err(LuaError::ExternalError(Arc::new(
                     $crate::modules::lua::lib::r#async::AsyncError::FutureError(err.to_string()),
-                )))
+                )).into())
             }
         };
 
         let sandbox_state = $state.named_registry_value("__SANDBOX_STATE").ok().clone();
 
         let sender = $sender.clone();
-        let data = $data.clone();
+        let data = $data;
         tokio::spawn(async move {
             let fut_res = $fut.await;
 

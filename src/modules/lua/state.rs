@@ -95,6 +95,7 @@ impl LuaState {
                 async_sender.clone(),
                 sandbox_state.expect("sandbox state for bot state"),
             )?;
+            http::lib_http(&inner, async_sender.clone())?;
             lib_tags(&inner, bot, async_sender.clone())?;
             inner.set_named_registry_value("__ASYNC_THREADS", inner.create_table()?)?;
             inner.set_named_registry_value("__ASYNC_THREADS_CHANNELS", inner.create_table()?)?;

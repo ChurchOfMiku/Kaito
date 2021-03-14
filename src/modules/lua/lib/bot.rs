@@ -649,6 +649,17 @@ impl UserData for BotChannel {
             Ok(fut)
         });
 
+        methods.add_method("send_typing", |_state, chan, (): ()| {
+            let ctx = chan.0.bot.get_ctx();
+            let channel_id = chan.id();
+
+            tokio::spawn(async move {
+                ctx.services().send_typing(channel_id).await.ok();
+            });
+
+            Ok(())
+        });
+
         methods.add_meta_method(
             MetaMethod::Index,
             |state, channel, index: String| match index.as_str() {
