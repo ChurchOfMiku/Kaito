@@ -11,7 +11,7 @@ bot.add_command("markov", {
         }
     },
     callback = function(msg, args, extra_args)
-        if running >= 3 then
+        if running >= 6 then
             return msg:reply("current running markov operations limit reached")
         end
 
