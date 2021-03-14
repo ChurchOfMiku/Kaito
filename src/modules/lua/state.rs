@@ -328,10 +328,6 @@ impl LuaState {
     pub fn async_sender(&self) -> Sender<LuaAsyncCallback> {
         self.async_sender.clone()
     }
-
-    pub fn inner(&self) -> &Lua {
-        &self.inner
-    }
 }
 
 pub enum SandboxMsg {

@@ -246,7 +246,7 @@ pub fn lib_http(state: &Lua, sender: Sender<LuaAsyncCallback>) -> anyhow::Result
                 (url, sender.clone()),
                 async move {
                     match client.request(req).await {
-                        Ok(mut res) => Ok(res),
+                        Ok(res) => Ok(res),
                         Err(err) => Err(err),
                     }
                 },

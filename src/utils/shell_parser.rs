@@ -55,7 +55,8 @@ pub fn parse_shell_args(markdown: bool, text: &str) -> Result<Vec<String>, ArgsE
                                     prev_char = chars.next().map(|(_, c)| c);
                                 }
 
-                                ParseState::Start
+                                state = ParseState::Start;
+                                continue;
                             } else {
                                 arg.push('`');
                                 ParseState::Arg(Quote::Unquoted)

@@ -276,6 +276,7 @@ macro_rules! services {
         }
 
         impl ServiceKind {
+            #[allow(dead_code)]
             pub fn from_str(s: &str) -> Option<ServiceKind> {
                 match s {
                     $(stringify!($service_ident) => Some(ServiceKind::$service_module_ident),)+
@@ -297,6 +298,7 @@ macro_rules! services {
                 type Error = &'static str;
 
                 fn try_into(self: UserId) -> Result<<$service as Service>::UserId, Self::Error> {
+                    #[allow(unreachable_patterns)]
                     match self {
                         UserId::$service_module_ident(id) => Ok(id),
                         _ => Err("user id belongs to another service")

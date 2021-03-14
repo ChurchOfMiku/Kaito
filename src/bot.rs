@@ -20,7 +20,7 @@ pub const DEFAULT_ROLE: &'static str = ROLES[0];
 pub struct Bot {
     ctx: ArcSwapOption<BotContext>,
     db: Arc<BotDb>,
-    data_path: PathBuf,
+    _data_path: PathBuf,
     share_path: PathBuf,
 }
 
@@ -42,7 +42,7 @@ impl Bot {
         Ok(Arc::new(Bot {
             ctx: ArcSwapOption::default(),
             db: BotDb::new(&data_path, &share_path, config).await?,
-            data_path,
+            _data_path: data_path,
             share_path,
         }))
     }

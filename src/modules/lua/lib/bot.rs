@@ -621,10 +621,6 @@ impl BotChannel {
     pub fn server(&self) -> &BotServer {
         &self.0.server
     }
-
-    pub fn service(&self) -> ServiceKind {
-        self.0.service
-    }
 }
 
 impl UserData for BotChannel {
