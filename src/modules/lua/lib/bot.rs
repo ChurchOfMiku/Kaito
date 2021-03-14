@@ -10,12 +10,13 @@ use std::{
 use super::super::state::{LuaAsyncCallback, LuaState, SandboxMsg, SandboxTerminationReason};
 use crate::{
     bot::{
-        db::{User as DbUser, UserId},
+        db::{Uid, User as DbUser},
         Bot, ROLES,
     },
+    message::MessageSettings,
     services::{
         Channel, ChannelId, Message, MessageId, Server, ServerId, Service, ServiceFeatures,
-        ServiceKind, ServiceUserId, Services, User,
+        ServiceKind, Services, User, UserId,
     },
     settings::SettingContext,
     utils::escape_untrusted_text,
@@ -427,11 +428,19 @@ impl UserData for BotMessage {
         methods.add_method("reply", |_state, msg, content: String| {
             let ctx = msg.0.bot.get_ctx();
             let channel_id = msg.0.channel.id();
+            let author_id = msg.0.author.id();
 
             tokio::spawn(async move {
                 ctx.services()
                     .clone()
-                    .send_message(channel_id, content)
+                    .send_message(
+                        channel_id,
+                        content,
+                        MessageSettings {
+                            reply_user: Some(author_id),
+                            ..MessageSettings::default()
+                        },
+                    )
                     .await
                     .ok();
             });
@@ -535,7 +544,11 @@ impl BotUser {
         ))
     }
 
-    pub fn uid(&self) -> UserId {
+    pub fn id(&self) -> UserId {
+        self.0.id
+    }
+
+    pub fn uid(&self) -> Uid {
         self.1.uid
     }
 }
@@ -543,7 +556,7 @@ impl BotUser {
 pub struct BotUserInner {
     name: String,
     nick: String,
-    id: ServiceUserId,
+    id: UserId,
     restricted: bool,
 }
 
@@ -638,7 +651,11 @@ impl UserData for BotChannel {
                 chan.0.sender,
                 (),
                 async move {
-                    match ctx.services().send_message(channel_id, content).await {
+                    match ctx
+                        .services()
+                        .send_message(channel_id, content, MessageSettings::default())
+                        .await
+                    {
                         Ok(msg) => BotMessage::from_msg(bot, sender, &msg).await,
                         Err(err) => Err(err),
                     }

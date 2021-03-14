@@ -2,7 +2,7 @@ use serenity::model::user;
 use std::sync::Arc;
 
 use super::DiscordService;
-use crate::services::{ServiceUserId, User};
+use crate::services::{User, UserId};
 
 pub struct DiscordUser {
     user: user::User,
@@ -23,8 +23,8 @@ impl DiscordUser {
 }
 
 impl User<DiscordService> for DiscordUser {
-    fn id(&self) -> ServiceUserId {
-        ServiceUserId::Discord(self.user.id.0)
+    fn id(&self) -> UserId {
+        UserId::Discord(self.user.id.0)
     }
 
     fn name(&self) -> &str {

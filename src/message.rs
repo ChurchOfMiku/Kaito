@@ -1,3 +1,11 @@
+use super::services::{MessageId, UserId};
+
+#[derive(Clone, Default)]
+pub struct MessageSettings {
+    pub reply: Option<MessageId>,
+    pub reply_user: Option<UserId>,
+}
+
 pub enum MessageContent<'a> {
     String(String),
     Str(&'a str),

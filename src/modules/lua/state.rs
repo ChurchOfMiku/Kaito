@@ -27,7 +27,9 @@ use super::{
         tags::lib_tags,
     },
 };
-use crate::{bot::Bot, services::ChannelId, utils::escape_untrusted_text};
+use crate::{
+    bot::Bot, message::MessageSettings, services::ChannelId, utils::escape_untrusted_text,
+};
 
 pub type LuaAsyncCallback = (
     RegistryKey,
@@ -244,6 +246,7 @@ impl LuaState {
                                 .send_message(
                                     id,
                                     escape_untrusted_text(id.service_kind(), err.to_string()),
+                                    MessageSettings::default(),
                                 )
                                 .await
                                 .ok();

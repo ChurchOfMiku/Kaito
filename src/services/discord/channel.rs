@@ -1,10 +1,10 @@
 use anyhow::Result;
-use serenity::{http::CacheHttp, model::channel};
-use std::sync::Arc;
+use serenity::model::channel;
+use std::{convert::TryInto, sync::Arc};
 
 use super::{message::DiscordMessage, server::DiscordServer, DiscordError, DiscordService};
 use crate::{
-    message::{MessageContent, ToMessageContent},
+    message::{MessageContent, MessageSettings, ToMessageContent},
     services::{Channel, ChannelId},
 };
 
@@ -38,7 +38,11 @@ impl Channel<DiscordService> for DiscordChannel {
         }
     }
 
-    async fn send<'a, C>(&self, content: C) -> Result<Arc<DiscordMessage>>
+    async fn send<'a, C>(
+        &self,
+        content: C,
+        settings: MessageSettings,
+    ) -> Result<Arc<DiscordMessage>>
     where
         C: ToMessageContent<'a>,
     {
@@ -46,13 +50,26 @@ impl Channel<DiscordService> for DiscordChannel {
             MessageContent::String(text) => {
                 self.channel
                     .id()
-                    .say(&self.service.cache_and_http().http, text)
+                    .send_message(&self.service.cache_and_http().http, |m| {
+                        m.content(text).allowed_mentions(|am| {
+                            am.empty_parse();
+
+                            if let Some(mention_user) = settings.reply_user {
+                                let a: Result<u64, _> = mention_user.try_into();
+                                if let Ok(id) = a {
+                                    am.users(vec![id]);
+                                }
+                            }
+
+                            am
+                        })
+                    })
                     .await?
             }
             MessageContent::Str(text) => {
                 self.channel
                     .id()
-                    .say(&self.service.cache_and_http().http, text)
+                    .send_message(&self.service.cache_and_http().http, |m| m.content(text))
                     .await?
             }
         };

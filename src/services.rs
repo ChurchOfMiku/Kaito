@@ -4,7 +4,11 @@ use std::{str::FromStr, sync::Arc};
 
 pub mod discord;
 
-use crate::{bot::Bot, config::ConfigServices, message::ToMessageContent};
+use crate::{
+    bot::Bot,
+    config::ConfigServices,
+    message::{MessageSettings, ToMessageContent},
+};
 
 macro_rules! service_id_functions {
     ($id:ident, $service_id:ident, $(($service_module_ident:ident, $service:ty)),+) => {
@@ -70,7 +74,7 @@ macro_rules! services {
                 }))
             }
 
-            pub async fn send_message<'a, C>(&self, channel_id: ChannelId, content: C) -> Result<Arc<dyn Message<impl Service>>>
+            pub async fn send_message<'a, C>(&self, channel_id: ChannelId, content: C, settings: MessageSettings) -> Result<Arc<dyn Message<impl Service>>>
             where
                 C: ToMessageContent<'a>
             {
@@ -85,7 +89,7 @@ macro_rules! services {
                                 .channel(id)
                                 .await?;
 
-                            let msg: Arc<dyn Message<_>> = channel.send(content).await?;
+                            let msg: Arc<dyn Message<_>> = channel.send(content, settings).await?;
                             Ok(msg)
                         }
                     ),+
@@ -154,10 +158,10 @@ macro_rules! services {
             }
 
 
-            pub async fn user(&self, user_id: ServiceUserId) -> Result<Arc<dyn User<impl Service>>> {
+            pub async fn user(&self, user_id: UserId) -> Result<Arc<dyn User<impl Service>>> {
                 match user_id {
                     $(
-                        ServiceUserId::$service_module_ident(id) => {
+                        UserId::$service_module_ident(id) => {
                             let user: Arc<<$service as Service>::User> = self.$service_ident.as_ref()
                             .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
                             .service()
@@ -260,11 +264,11 @@ macro_rules! services {
         service_id_functions!{ServerId, ServerId, $(($service_module_ident, $service)),+}
 
         #[derive(Copy, Clone, Hash, Eq, PartialEq)]
-        pub enum ServiceUserId {
+        pub enum UserId {
             $($service_module_ident (<$service as Service>::UserId)),+
         }
 
-        service_id_functions!{ServiceUserId, UserId, $(($service_module_ident, $service)),+}
+        service_id_functions!{UserId, UserId, $(($service_module_ident, $service)),+}
 
         #[derive(Copy, Clone, Hash, PartialEq)]
         pub enum ServiceKind {
@@ -287,6 +291,19 @@ macro_rules! services {
                 }
             }
         }
+
+        $(
+            impl std::convert::TryInto<<$service as Service>::UserId> for UserId {
+                type Error = &'static str;
+
+                fn try_into(self: UserId) -> Result<<$service as Service>::UserId, Self::Error> {
+                    match self {
+                        UserId::$service_module_ident(id) => Ok(id),
+                        _ => Err("user id belongs to another service")
+                    }
+                }
+            }
+        )+
     };
 }
 
@@ -367,7 +384,7 @@ pub trait Message<S: Service>: Send + Sync {
 }
 
 pub trait User<S: Service>: Send + Sync {
-    fn id(&self) -> ServiceUserId;
+    fn id(&self) -> UserId;
     fn name(&self) -> &str;
     fn nick(&self) -> &str;
     fn avatar(&self) -> &Option<String> {
@@ -383,7 +400,7 @@ pub trait User<S: Service>: Send + Sync {
 pub trait Channel<S: Service>: Send + Sync {
     fn id(&self) -> ChannelId;
     fn name(&self) -> String;
-    async fn send<'a, C>(&self, content: C) -> Result<Arc<S::Message>>
+    async fn send<'a, C>(&self, content: C, settings: MessageSettings) -> Result<Arc<S::Message>>
     where
         Self: Sized,
         C: ToMessageContent<'a>;

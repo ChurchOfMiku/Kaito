@@ -9,10 +9,10 @@ use std::{path::Path, sync::Arc};
 use super::{DEFAULT_ROLE, ROLES};
 use crate::{
     config::Config,
-    services::{ChannelId, ServerId, ServiceUserId},
+    services::{ChannelId, ServerId, UserId},
 };
 
-pub type UserId = i64;
+pub type Uid = i64;
 pub type Sid = i64;
 
 pub struct BotDb {
@@ -36,7 +36,7 @@ impl BotDb {
 
         if let Some(user_roles) = config.user_roles.as_ref() {
             for (id_str, role) in user_roles {
-                let user_id = ServiceUserId::from_str(&id_str)?;
+                let user_id = UserId::from_str(&id_str)?;
                 let user = db.get_user_from_service_user_id(user_id).await?;
                 db.set_role_for_user(user.uid, role).await?;
             }
@@ -45,7 +45,7 @@ impl BotDb {
         Ok(db)
     }
 
-    pub async fn get_user_from_uid(&self, uid: UserId) -> Result<User> {
+    pub async fn get_user_from_uid(&self, uid: Uid) -> Result<User> {
         let (role, discord_id): (Option<String>, Option<Vec<u8>>) =
             sqlx::query_as("SELECT role, discord_id FROM users WHERE uid = ?")
                 .bind(uid)
@@ -68,13 +68,10 @@ impl BotDb {
         })
     }
 
-    pub async fn get_user_from_service_user_id(
-        &self,
-        service_user_id: ServiceUserId,
-    ) -> Result<User> {
-        let res: Result<(UserId, Option<String>, Option<Vec<u8>>), sqlx::Error> =
+    pub async fn get_user_from_service_user_id(&self, service_user_id: UserId) -> Result<User> {
+        let res: Result<(Uid, Option<String>, Option<Vec<u8>>), sqlx::Error> =
             match service_user_id {
-                ServiceUserId::Discord(discord_id) => {
+                UserId::Discord(discord_id) => {
                     sqlx::query_as("SELECT uid, role, discord_id FROM users WHERE discord_id = ?")
                         .bind(discord_id.to_le_bytes().to_vec())
                 }
@@ -85,7 +82,7 @@ impl BotDb {
         let (uid, role, discord_id) = match res {
             Err(sqlx::Error::RowNotFound) => {
                 let (res, discord_id) = match service_user_id {
-                    ServiceUserId::Discord(discord_id) => (
+                    UserId::Discord(discord_id) => (
                         self.pool()
                             .execute(
                                 sqlx::query("INSERT INTO users ( discord_id ) VALUES ( ? )")
@@ -118,7 +115,7 @@ impl BotDb {
         })
     }
 
-    pub async fn set_role_for_user(&self, user_id: UserId, role: &str) -> Result<()> {
+    pub async fn set_role_for_user(&self, user_id: Uid, role: &str) -> Result<()> {
         if !ROLES.contains(&role) {
             return Err(anyhow!("unknown role \"{}\"", role));
         }
@@ -134,7 +131,7 @@ impl BotDb {
         Ok(())
     }
 
-    pub async fn restrict_user(&self, user_id: UserId, restrictor_user_id: UserId) -> Result<()> {
+    pub async fn restrict_user(&self, user_id: Uid, restrictor_user_id: Uid) -> Result<()> {
         self.pool()
             .execute(
                 sqlx::query("INSERT INTO restrictions ( uid, restrictor_user_id ) VALUES ( ?, ? )")
@@ -146,7 +143,7 @@ impl BotDb {
         Ok(())
     }
 
-    pub async fn unrestrict_user(&self, user_id: UserId) -> Result<()> {
+    pub async fn unrestrict_user(&self, user_id: Uid) -> Result<()> {
         self.pool()
             .execute(sqlx::query("DELETE FROM restrictions WHERE uid = ?").bind(user_id))
             .await?;
@@ -154,7 +151,7 @@ impl BotDb {
         Ok(())
     }
 
-    pub async fn is_restricted(&self, user_id: UserId) -> Result<bool> {
+    pub async fn is_restricted(&self, user_id: Uid) -> Result<bool> {
         let restricted = sqlx::query_as("SELECT uid FROM restrictions WHERE uid = ?")
             .bind(user_id)
             .fetch_one(self.pool())
@@ -281,17 +278,15 @@ impl BotDb {
             .bind(sid)
             .fetch_one(self.pool())
             .await
-            .map(
-                |(value, uid, transfer_uid): (String, UserId, Option<UserId>)| {
-                    Some(Tag {
-                        key: key.to_string(),
-                        uid,
-                        transfer_uid,
-                        value,
-                        sid,
-                    })
-                },
-            )
+            .map(|(value, uid, transfer_uid): (String, Uid, Option<Uid>)| {
+                Some(Tag {
+                    key: key.to_string(),
+                    uid,
+                    transfer_uid,
+                    value,
+                    sid,
+                })
+            })
             .or_else(|err| match err {
                 sqlx::Error::RowNotFound => Ok(None),
                 _ => Err(err.into()),
@@ -300,7 +295,7 @@ impl BotDb {
 
     pub async fn create_tag(
         &self,
-        uid: UserId,
+        uid: Uid,
         server_id: ServerId,
         key: &str,
         value: &str,
@@ -337,7 +332,7 @@ impl BotDb {
         Ok(())
     }
 
-    pub async fn set_tag_uid(&self, sid: Sid, key: &str, uid: UserId) -> Result<()> {
+    pub async fn set_tag_uid(&self, sid: Sid, key: &str, uid: Uid) -> Result<()> {
         self.pool()
             .execute(
                 sqlx::query("UPDATE tags SET uid = ? WHERE key = ? AND sid = ?")
@@ -350,12 +345,7 @@ impl BotDb {
         Ok(())
     }
 
-    pub async fn set_tag_transfer_uid(
-        &self,
-        sid: Sid,
-        key: &str,
-        uid: Option<UserId>,
-    ) -> Result<()> {
+    pub async fn set_tag_transfer_uid(&self, sid: Sid, key: &str, uid: Option<Uid>) -> Result<()> {
         self.pool()
             .execute(
                 sqlx::query("UPDATE tags SET transfer_uid = ? WHERE key = ? AND sid = ?")
@@ -380,7 +370,7 @@ impl BotDb {
         Ok(())
     }
 
-    pub async fn count_uid_tags(&self, uid: UserId) -> Result<i64> {
+    pub async fn count_uid_tags(&self, uid: Uid) -> Result<i64> {
         let (count,) = sqlx::query_as("SELECT COUNT(*) FROM tags WHERE uid = ?")
             .bind(uid)
             .fetch_one(self.pool())
@@ -389,7 +379,7 @@ impl BotDb {
         Ok(count)
     }
 
-    pub async fn list_tags(&self, uid: UserId, server_id: ServerId) -> Result<Vec<String>> {
+    pub async fn list_tags(&self, uid: Uid, server_id: ServerId) -> Result<Vec<String>> {
         let sid = self.get_sid(server_id).await?;
 
         #[derive(sqlx::FromRow)]
@@ -413,15 +403,15 @@ impl BotDb {
 
 #[derive(Clone)]
 pub struct User {
-    pub uid: UserId,
+    pub uid: Uid,
     pub role: String,
     pub discord_id: Option<u64>,
 }
 
 impl User {
-    pub fn service_user_id(&self) -> ServiceUserId {
+    pub fn service_user_id(&self) -> UserId {
         if let Some(discord_id) = self.discord_id {
-            return ServiceUserId::Discord(discord_id);
+            return UserId::Discord(discord_id);
         }
 
         unreachable!("no valid service id for uid {}", self.uid)
@@ -430,8 +420,8 @@ impl User {
 
 pub struct Tag {
     pub key: String,
-    pub uid: UserId,
+    pub uid: Uid,
     pub sid: Sid,
-    pub transfer_uid: Option<UserId>,
+    pub transfer_uid: Option<Uid>,
     pub value: String,
 }

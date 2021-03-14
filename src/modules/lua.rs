@@ -17,6 +17,7 @@ use self::lib::bot::BotUser;
 use super::{Module, ModuleKind};
 use crate::{
     bot::Bot,
+    message::MessageSettings,
     services::{
         Channel, ChannelId, Message, Server, ServerId, Service, ServiceFeatures, ServiceKind, User,
     },
@@ -204,7 +205,10 @@ impl LuaModule {
         drop(lua_state);
 
         if let Err(err) = res {
-            msg.channel().await?.send(err.to_string()).await?;
+            msg.channel()
+                .await?
+                .send(err.to_string(), MessageSettings::default())
+                .await?;
         }
 
         Ok(())
@@ -262,10 +266,13 @@ impl LuaModule {
                         if errors && !err.is_empty() {
                             msg.channel()
                                 .await?
-                                .send(escape_untrusted_text(
-                                    msg.service().kind(),
-                                    format!("error: {}", err),
-                                ))
+                                .send(
+                                    escape_untrusted_text(
+                                        msg.service().kind(),
+                                        format!("error: {}", err),
+                                    ),
+                                    MessageSettings::default(),
+                                )
                                 .await?;
                         }
                     }
@@ -274,14 +281,20 @@ impl LuaModule {
                         SandboxTerminationReason::ExecutionQuota => {
                             msg.channel()
                                 .await?
-                                .send("Execution quota exceeded, terminated execution")
+                                .send(
+                                    "Execution quota exceeded, terminated execution",
+                                    MessageSettings::default(),
+                                )
                                 .await?;
                             break;
                         }
                         SandboxTerminationReason::TimeLimit => {
                             msg.channel()
                                 .await?
-                                .send("Execution time limit reached, terminated execution")
+                                .send(
+                                    "Execution time limit reached, terminated execution",
+                                    MessageSettings::default(),
+                                )
                                 .await?;
                             break;
                         }
@@ -326,7 +339,10 @@ impl LuaModule {
 
                     sandbox_state.limits.set_characters_left(characters_left);
 
-                    msg.channel().await?.send(out).await?;
+                    msg.channel()
+                        .await?
+                        .send(out, MessageSettings::default())
+                        .await?;
 
                     last_msg = Instant::now();
                     has_messaged = true;
@@ -335,7 +351,10 @@ impl LuaModule {
         }
 
         if let Some(aborting) = aborting {
-            msg.channel().await?.send(aborting).await?;
+            msg.channel()
+                .await?
+                .send(aborting, MessageSettings::default())
+                .await?;
         }
 
         Ok(())
