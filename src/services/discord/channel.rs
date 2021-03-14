@@ -46,33 +46,29 @@ impl Channel<DiscordService> for DiscordChannel {
     where
         C: ToMessageContent<'a>,
     {
-        let msg = match content.to_message_content() {
-            MessageContent::String(text) => {
-                self.channel
-                    .id()
-                    .send_message(&self.service.cache_and_http().http, |m| {
-                        m.content(text).allowed_mentions(|am| {
-                            am.empty_parse();
-
-                            if let Some(mention_user) = settings.reply_user {
-                                let a: Result<u64, _> = mention_user.try_into();
-                                if let Ok(id) = a {
-                                    am.users(vec![id]);
-                                }
-                            }
-
-                            am
-                        })
-                    })
-                    .await?
-            }
-            MessageContent::Str(text) => {
-                self.channel
-                    .id()
-                    .send_message(&self.service.cache_and_http().http, |m| m.content(text))
-                    .await?
-            }
+        let content = match content.to_message_content() {
+            MessageContent::String(text) => text,
+            MessageContent::Str(text) => text.to_string(),
         };
+
+        let msg = self
+            .channel
+            .id()
+            .send_message(&self.service.cache_and_http().http, |m| {
+                m.content(content).allowed_mentions(|am| {
+                    am.empty_parse();
+
+                    if let Some(mention_user) = settings.reply_user {
+                        let a: Result<u64, _> = mention_user.try_into();
+                        if let Ok(id) = a {
+                            am.users(vec![id]);
+                        }
+                    }
+
+                    am
+                })
+            })
+            .await?;
 
         Ok(Arc::new(DiscordMessage::new(msg, self.service.clone())))
     }
