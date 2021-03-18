@@ -320,6 +320,10 @@ pub fn lib_bot(
                         match recv.try_recv() {
                             Ok(out) => match out {
                                 SandboxMsg::Out(o) => {
+                                    if !out_str.is_empty() {
+                                        out_str.push('\n');
+                                    }
+
                                     out_str.push_str(&o);
                                 }
                                 SandboxMsg::Error(err) => {
