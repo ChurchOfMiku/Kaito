@@ -136,9 +136,28 @@ impl Service for DiscordService {
             user_cache: AsyncMutex::new(LruCache::new(64)),
         });
 
-        let client = Client::builder(&config.token)
-            .event_handler(SerenityHandler::new(service.clone()))
-            .await?;
+        let client;
+        let mut retry_count = 1;
+
+        loop {
+            match Client::builder(&config.token)
+                .event_handler(SerenityHandler::new(service.clone()))
+                .await
+            {
+                Ok(c) => break client = c,
+                Err(err) => {
+                    let time = 2 ^ retry_count;
+                    retry_count += 1;
+                    println!(
+                        "Error creating discord client: {}, retrying in {} seconds",
+                        err.to_string(),
+                        time
+                    );
+
+                    tokio::time::sleep(std::time::Duration::from_secs(time)).await;
+                }
+            }
+        }
 
         client
             .cache_and_http
@@ -153,7 +172,24 @@ impl Service for DiscordService {
             .store(Some(client.cache_and_http.clone()));
 
         async fn wrap_client(mut client: Client) -> Result<()> {
-            client.start().await?;
+            let mut retry_count = 1;
+
+            loop {
+                match client.start().await {
+                    Ok(_) => break,
+                    Err(err) => {
+                        let time = 2 ^ retry_count;
+                        retry_count += 1;
+                        println!(
+                            "Error connecting to discord: {}, retrying in {} seconds",
+                            err.to_string(),
+                            time
+                        );
+
+                        tokio::time::sleep(std::time::Duration::from_secs(time)).await;
+                    }
+                }
+            }
 
             Ok(())
         }
