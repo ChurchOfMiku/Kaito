@@ -125,7 +125,7 @@ function sandbox.utils.table_to_string(tbl, indent, key, tbls)
                 out = out .. sandbox.utils.table_to_string(v, indent + 2, k, tbls)
             end
         elseif t == "string" then
-            out = out .. left_pad2 .. (is_array and "" or k .. " = \"") .. tostring(v) .. "\""
+            out = out .. left_pad2 .. (is_array and "\"" or k .. " = \"") .. tostring(v) .. "\""
         else
             out = out .. left_pad2 .. (is_array and "" or k .. " = ") .. tostring(v)
         end
