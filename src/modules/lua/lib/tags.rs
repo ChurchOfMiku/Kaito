@@ -11,6 +11,7 @@ use crate::bot::{db::Tag, Bot};
 
 #[derive(Debug, PartialEq)]
 enum TagPart {
+    Codeblock(String, String),
     Text(String),
     Tag(String, String),
     Var(String),
@@ -23,7 +24,11 @@ fn parse_tag(value: &str) -> Vec<TagPart> {
     let mut closures_deep = 0;
     let mut tag = None;
 
-    for c in value.chars() {
+    let mut chars = value.chars().enumerate();
+
+    while let Some((i, c)) = chars.next() {
+        let rest = &value[i..];
+
         if c == '{' {
             if !text.is_empty() && closures_deep == 0 {
                 out.push(TagPart::Text(std::mem::replace(&mut text, String::new())));
@@ -61,6 +66,34 @@ fn parse_tag(value: &str) -> Vec<TagPart> {
                 tag = Some(name.to_string());
                 text.clear();
                 continue;
+            }
+        } else if c == '`' && closures_deep == 0 && rest.starts_with("```") {
+            if !text.is_empty() && closures_deep == 0 {
+                out.push(TagPart::Text(std::mem::replace(&mut text, String::new())));
+            }
+
+            let rest2 = &rest[3..];
+
+            if let Some(end) = rest2.find("```") {
+                if let Some(lang_size) = rest2
+                    .chars()
+                    .enumerate()
+                    .find(|(_, c)| c.is_whitespace())
+                    .map(|(o, _)| o)
+                {
+                    let lang = &rest2[..lang_size];
+                    let content = &rest2[lang_size + 1..end];
+
+                    if lang_size > 0 && !content.is_empty() {
+                        out.push(TagPart::Codeblock(lang.into(), content.into()));
+
+                        for _ in 0..(end + 6) {
+                            chars.next();
+                        }
+
+                        continue;
+                    }
+                }
             }
         }
 
@@ -190,6 +223,14 @@ pub fn lib_tags(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
         for (i, tag_part) in parse_tag(&value).into_iter().enumerate() {
             let i = i + 1;
             match tag_part {
+                TagPart::Codeblock(lang, value) => {
+                    let tbl = state.create_table()?;
+
+                    tbl.set("codeblock", lang)?;
+                    tbl.set("value", value)?;
+
+                    out.raw_insert(i as i64, tbl)?
+                }
                 TagPart::Text(text) => out.raw_insert(i as i64, text)?,
                 TagPart::Tag(tag, value) => {
                     let tbl = state.create_table()?;
@@ -333,7 +374,7 @@ mod tests {
 
     #[test]
     fn parse_tag_test() {
-        let parts = parse_tag("text {a:b} aaa {test} b {c: a{}b}");
+        let parts = parse_tag("text {a:b} aaa {test} b {c: a{}b} ```lua print(1)```");
 
         assert_eq!(
             parts,
@@ -343,7 +384,9 @@ mod tests {
                 TagPart::Text(" aaa ".into()),
                 TagPart::Var("test".into()),
                 TagPart::Text(" b ".into()),
-                TagPart::Tag("c".into(), " a{}b".into())
+                TagPart::Tag("c".into(), " a{}b".into()),
+                TagPart::Text(" ".into()),
+                TagPart::Codeblock("lua".into(), "print(1)".into()).into()
             ]
         )
     }
