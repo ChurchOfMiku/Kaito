@@ -24,10 +24,12 @@ fn parse_tag(value: &str) -> Vec<TagPart> {
     let mut closures_deep = 0;
     let mut tag = None;
 
-    let mut chars = value.chars().enumerate();
+    let mut chars = value.chars();
 
-    while let Some((i, c)) = chars.next() {
-        let rest = &value[i..];
+    let mut offset = 0;
+    while let Some(c) = chars.next() {
+        let rest = &value[offset..];
+        offset += c.len_utf8();
 
         if c == '{' {
             if !text.is_empty() && closures_deep == 0 {
