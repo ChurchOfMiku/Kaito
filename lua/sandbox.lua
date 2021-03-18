@@ -64,6 +64,9 @@ function sandbox.run_coroutine(thread)
 end
 
 local function update_env(fenv, state)
+    local pairs = pairs
+    local tostring = tostring
+    local next = next
     fenv.print = function(...)
         local out = ""
         local tbl = {...}
@@ -151,6 +154,10 @@ function sandbox.run(state, source, env)
 
         if thread then
             local task_fn = function()
+                local pairs = pairs
+                local tostring = tostring
+                local next = next
+
                 if coroutine.status(thread) == "dead" then
                     return true
                 end
@@ -191,6 +198,10 @@ function sandbox.run(state, source, env)
 
             sandbox.tasks[task_fn] = task_fn
         elseif res then
+            local pairs = pairs
+            local tostring = tostring
+            local next = next
+
             sandbox.exec(state, fenv, function()
                 local out = ""
         
@@ -208,6 +219,7 @@ function sandbox.run(state, source, env)
             state:terminate("done")
         end
     else
+        local tostring = tostring
         sandbox.run(state, function()
             state:error(tostring(res))
         end)
