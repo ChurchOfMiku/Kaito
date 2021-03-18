@@ -45,9 +45,15 @@ pub fn parse_shell_args(markdown: bool, text: &str) -> Vec<String> {
                 Some('`') if markdown => {
                     if prev_char.is_none() || prev_char == Some('\n') || prev_char == Some(' ') {
                         let rest = &text[offset..];
-                        if rest.starts_with("```\n") || rest.starts_with("``` ") {
-                            if let Some(end) = rest.find("\n```").or(rest.find(" ```")) {
-                                args.push(rest[4..end].into());
+                        if rest.starts_with("```") {
+                            let rest2 = &text[offset + 3..];
+                            let is_arg = rest.starts_with("```\n") || rest.starts_with("``` ");
+                            if let Some(end) = rest2.find("```").map(|o| o + 3) {
+                                if is_arg {
+                                    args.push(rest[3..end].into());
+                                } else {
+                                    args.push(rest[0..end + 3].into());
+                                }
 
                                 for _ in 0..(end + 3) {
                                     prev_char = chars.next().map(|(_, c)| c);

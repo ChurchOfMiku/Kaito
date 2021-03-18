@@ -77,16 +77,18 @@ fn parse_tag(value: &str) -> Vec<TagPart> {
             let rest2 = &rest[3..];
 
             if let Some(end) = rest2.find("```") {
-                if let Some(lang_size) = rest2
+                let lang_size = rest2
                     .chars()
-                    .enumerate()
-                    .find(|(_, c)| c.is_whitespace())
-                    .map(|(o, _)| o)
-                {
-                    let lang = &rest2[..lang_size];
+                    .take_while(|c| !c.is_whitespace())
+                    .map(|c| c.len_utf8())
+                    .sum();
+
+                if lang_size + 1 <= end {
                     let content = &rest2[lang_size + 1..end];
 
-                    if lang_size > 0 && !content.is_empty() {
+                    if rest2.len() > lang_size && !content.is_empty() {
+                        let lang = &rest2[..lang_size];
+
                         out.push(TagPart::Codeblock(lang.into(), content.into()));
 
                         for _ in 0..(end + 6) {
