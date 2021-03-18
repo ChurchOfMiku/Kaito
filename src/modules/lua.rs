@@ -195,7 +195,7 @@ impl LuaModule {
                 .kind()
                 .supports_feature(ServiceFeatures::MARKDOWN),
             &rest,
-        )?;
+        );
 
         let lua_state = self.get_bot_state().await?;
         let sender = lua_state.async_sender();

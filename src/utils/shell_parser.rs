@@ -1,5 +1,3 @@
-use thiserror::Error;
-
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Quote {
     Unquoted,
@@ -23,7 +21,7 @@ enum ParseState {
     Escape(Quote),
 }
 
-pub fn parse_shell_args(markdown: bool, text: &str) -> Result<Vec<String>, ArgsError> {
+pub fn parse_shell_args(markdown: bool, text: &str) -> Vec<String> {
     let mut args = Vec::new();
     let mut arg = String::new();
     let mut state = ParseState::Start;
@@ -81,9 +79,10 @@ pub fn parse_shell_args(markdown: bool, text: &str) -> Result<Vec<String>, ArgsE
                     args.push(std::mem::replace(&mut arg, String::new()));
                     break;
                 }
-                None => return Err(ArgsError::UnexpectedEof(quote.to_str().unwrap())),
-                Some('\'') if quote == Quote::Unquoted => ParseState::Arg(Quote::SingleQuoted),
-                Some('\"') if quote == Quote::Unquoted => ParseState::Arg(Quote::DoubleQuoted),
+                None => {
+                    args.push(format!("{}{}", quote.to_str().unwrap(), arg));
+                    break;
+                }
                 Some('\'') if quote == Quote::SingleQuoted => ParseState::Arg(Quote::Unquoted),
                 Some('\"') if quote == Quote::DoubleQuoted => ParseState::Arg(Quote::Unquoted),
                 Some(' ') if quote == Quote::Unquoted => {
@@ -104,7 +103,8 @@ pub fn parse_shell_args(markdown: bool, text: &str) -> Result<Vec<String>, ArgsE
                         break;
                     }
                     Quote::SingleQuoted | Quote::DoubleQuoted => {
-                        return Err(ArgsError::UnexpectedEof(quote.to_str().unwrap()));
+                        args.push(format!("{}{}\\", quote.to_str().unwrap(), arg));
+                        break;
                     }
                 },
                 Some(c) => {
@@ -117,11 +117,5 @@ pub fn parse_shell_args(markdown: bool, text: &str) -> Result<Vec<String>, ArgsE
         prev_char = c;
     }
 
-    Ok(args)
-}
-
-#[derive(Debug, Error)]
-pub enum ArgsError {
-    #[error("unexpected EOF while looking for matching {_0}")]
-    UnexpectedEof(&'static str),
+    args
 }
