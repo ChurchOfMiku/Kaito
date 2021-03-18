@@ -199,7 +199,7 @@ impl LuaState {
                 lines_left: AtomicU64::new(10),
                 characters_left: AtomicU64::new(2000),
                 http_calls_left: AtomicU64::new(2),
-                instructions: 8192,
+                instructions: 262144,
             },
             http_rate_limiter: self.http_rate_limiter.clone(),
         }));
