@@ -25,13 +25,17 @@ async fn run() -> Result<()> {
 
     let data_path = env::var("KAITO_DATA_PATH")
         .map(|p| PathBuf::from(p))
-        .or_else(|_| env::current_dir())?;
+        .or_else(|_| env::current_dir().map(|p| p.join("data")))?;
 
     let share_path = env::var("KAITO_SHARE_PATH")
         .map(|p| PathBuf::from(p))
         .or_else(|_| env::current_dir())?;
 
     let config = config::load_config(&config_path)?;
+
+    if !data_path.is_dir() {
+        std::fs::create_dir_all(&data_path)?;
+    }
 
     let bot = bot::Bot::init(data_path, share_path, &config).await?;
     let modules = modules::Modules::init(bot.clone(), &config).await?;
