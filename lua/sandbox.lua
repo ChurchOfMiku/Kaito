@@ -86,6 +86,17 @@ local function update_env(fenv, state)
     end
     sandbox.utils.setfenv(fenv.http.fetch, fenv)
 
+    fenv.json = fenv.json or {}
+    local json = json
+    fenv.json.decode = function(data)
+        return json.decode(tostring(data))
+    end
+    sandbox.utils.setfenv(fenv.json.decode, fenv)
+    fenv.json.encode = function(data)
+        return json.encode(data)
+    end
+    sandbox.utils.setfenv(fenv.json.encode, fenv)
+
     local sandbox = sandbox
     fenv.print_table = function(tbl)
         state:print(sandbox.utils.table_to_string(tbl))
