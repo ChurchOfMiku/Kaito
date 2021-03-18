@@ -120,7 +120,7 @@ function sandbox.async_callback(state, future, success, ...)
     end)
 end
 
-function sandbox.run(state, source, env)
+function sandbox.run(state, source, env, main)
     local fenv = update_env(sandbox.env.get_env(), state)
 
     if env then
@@ -191,7 +191,10 @@ function sandbox.run(state, source, env)
     
                     end
 
-                    state:terminate("done")
+                    if main then
+                        state:terminate("done")
+                    end
+
                     return true
                 end
             end
@@ -216,7 +219,9 @@ function sandbox.run(state, source, env)
                 state:print(out)
             end)
 
-            state:terminate("done")
+            if main then
+                state:terminate("done")
+            end
         end
     else
         local tostring = tostring

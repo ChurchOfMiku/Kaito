@@ -209,9 +209,9 @@ impl LuaState {
 
         if let Some(env_encoded) = env_encoded {
             let env = self.inner.to_value(&env_encoded)?;
-            run_fn.call((sandbox_state.clone(), source, env))?;
+            run_fn.call((sandbox_state.clone(), source, env, true))?;
         } else {
-            run_fn.call((sandbox_state.clone(), source))?;
+            run_fn.call((sandbox_state.clone(), source, LuaValue::Nil, true))?;
         }
 
         Ok((sandbox_state.0, receiver))
