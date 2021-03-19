@@ -57,6 +57,23 @@ macro_rules! modules_loader {
                     _ => None
                 }
             }
+
+            // Join all the unload functions of the modules and return the first error if any
+            pub async fn unload(&self) -> Result<()> {
+                let (
+                    $($module_ident,)+
+                ) = futures::join!(
+                    $(
+                        self.$module_ident.module().unload()
+                    ),+
+                );
+
+
+                match None.$(or_else(|| $module_ident.err())).+ {
+                    Some(err) => Err(err),
+                    None => Ok(())
+                }
+            }
         }
     };
     (__init, $module:ty, $bot:expr, $config:expr, ()) => {
@@ -77,6 +94,7 @@ pub trait Module: 'static + Send + Sync + Sized {
     type ModuleSettings: Settings;
 
     async fn load(bot: Arc<Bot>, config: Self::ModuleConfig) -> Result<Arc<Self>>;
+    async fn unload(&self) -> Result<()>;
 
     // TODO: Move message to type alias when impl's inside type aliases becomes stable
     async fn message(&self, msg: Arc<dyn Message<impl Service>>) -> Result<()>;

@@ -109,4 +109,18 @@ impl BotContext {
     pub fn services(&self) -> &Arc<Services> {
         &self.services
     }
+
+    pub async fn shutdown(&self) -> Result<()> {
+        self.modules().unload().await?;
+
+        Ok(())
+    }
+}
+
+impl Drop for BotContext {
+    fn drop(&mut self) {
+        if let Err(err) = futures::executor::block_on(self.shutdown()) {
+            println!("error while unloading lua module: {}", err.to_string());
+        }
+    }
 }

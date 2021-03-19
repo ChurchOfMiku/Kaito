@@ -86,6 +86,10 @@ impl Module for LuaModule {
         }))
     }
 
+    async fn unload(&self) -> Result<()> {
+        Ok(())
+    }
+
     async fn message(&self, msg: Arc<dyn Message<impl Service>>) -> Result<()> {
         // Ignore the bot
         if msg.author().id() == msg.service().current_user().await?.id()
