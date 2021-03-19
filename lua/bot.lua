@@ -349,6 +349,10 @@ function bot.on_reaction(msg, reactor, reaction, removed)
     end
 end
 
+function bot.shutdown()
+    hooks.call("shutdown")
+end
+
 include("bot/utils.lua")
 include("bot/commands/**/*.lua")
 include("bot/modules/**/*.lua")

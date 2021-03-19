@@ -13,7 +13,7 @@ use mlua::{
 };
 use paste::paste;
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
 
@@ -59,6 +59,7 @@ pub struct LuaState {
     async_receiver: Receiver<LuaAsyncCallback>,
     http_rate_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, QuantaClock>>,
     thread_id: AtomicU64,
+    shutting_down: AtomicBool,
 }
 
 impl LuaState {
@@ -119,6 +120,7 @@ impl LuaState {
             async_receiver,
             http_rate_limiter,
             thread_id: AtomicU64::new(0),
+            shutting_down: AtomicBool::new(false),
         })
     }
 
@@ -263,6 +265,12 @@ impl LuaState {
             }
         }
 
+        self.think_async_callbacks()?;
+
+        Ok(())
+    }
+
+    fn think_async_callbacks(&self) -> Result<()> {
         loop {
             // Check for async callbacks
             match self.async_receiver.try_recv() {
@@ -323,6 +331,29 @@ impl LuaState {
         }
 
         Ok(())
+    }
+
+    pub fn shutdown(&self) -> Result<bool> {
+        if self.shutting_down.swap(true, Ordering::Relaxed) {
+            self.think_async_callbacks()?;
+
+            let thread: Thread = self.inner.named_registry_value("__ASYNC_SHUTDOWN_THREAD")?;
+
+            if thread.status() != ThreadStatus::Resumable {
+                return Ok(false);
+            }
+
+            thread.resume(())?;
+        } else {
+            let bot_tbl: Table = self.inner.globals().get("bot")?;
+            let shutdown_fn: Function = bot_tbl.get("shutdown")?;
+            let thread = self.inner.create_thread(shutdown_fn)?;
+            thread.resume(())?;
+            self.inner
+                .set_named_registry_value("__ASYNC_SHUTDOWN_THREAD", thread)?;
+        }
+
+        Ok(true)
     }
 
     pub fn async_sender(&self) -> Sender<LuaAsyncCallback> {

@@ -87,6 +87,8 @@ impl Module for LuaModule {
     }
 
     async fn unload(&self) -> Result<()> {
+        while self.bot_state.clone().lock_arc().await.shutdown()? {}
+
         Ok(())
     }
 

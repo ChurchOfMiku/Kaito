@@ -45,6 +45,10 @@ async fn run() -> Result<()> {
 
     println!("Everything is online");
 
+    tokio::signal::ctrl_c().await?;
+    println!("Exit signal received, shutting down...");
+    bot.get_ctx().shutdown().await?;
+
     Ok(())
 }
 
@@ -52,10 +56,5 @@ async fn run() -> Result<()> {
 async fn main() {
     if let Err(err) = run().await {
         println!("Error: {}", err.to_string());
-    }
-
-    loop {
-        tokio::task::yield_now().await;
-        std::thread::yield_now();
     }
 }
