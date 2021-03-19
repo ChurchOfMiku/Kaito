@@ -78,6 +78,8 @@ impl Module for LuaModule {
             }
         });
 
+        bot_state.lock_arc().await.on_loaded()?;
+
         Ok(Arc::new(LuaModule {
             bot: bot.clone(),
             settings: LuaModuleSettings::create(bot)?,

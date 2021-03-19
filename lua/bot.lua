@@ -349,6 +349,10 @@ function bot.on_reaction(msg, reactor, reaction, removed)
     end
 end
 
+function bot.on_loaded()
+    hooks.call("loaded")
+end
+
 function bot.shutdown()
     hooks.call("shutdown")
 end

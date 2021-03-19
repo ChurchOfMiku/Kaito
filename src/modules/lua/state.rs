@@ -124,7 +124,7 @@ impl LuaState {
         })
     }
 
-    fn create_async_thread(&self, thread: Thread, channel_id: ChannelId) -> Result<()> {
+    fn create_async_thread(&self, thread: Thread, channel_id: Option<ChannelId>) -> Result<()> {
         if thread.status() == ThreadStatus::Resumable {
             let threads: Table = self.inner.named_registry_value("__ASYNC_THREADS")?;
             let thread_channels: Table = self
@@ -132,7 +132,9 @@ impl LuaState {
                 .named_registry_value("__ASYNC_THREADS_CHANNELS")?;
             let id = self.thread_id.fetch_add(1, Ordering::AcqRel);
             threads.set(id, thread)?;
-            thread_channels.set(id, channel_id.to_short_str())?;
+            if let Some(channel_id) = channel_id {
+                thread_channels.set(id, channel_id.to_short_str())?;
+            }
         }
 
         Ok(())
@@ -146,7 +148,7 @@ impl LuaState {
         let channel_id = msg.channel().id();
         thread.resume((msg, args))?;
 
-        self.create_async_thread(thread, channel_id)?;
+        self.create_async_thread(thread, Some(channel_id))?;
 
         Ok(())
     }
@@ -159,7 +161,7 @@ impl LuaState {
         let channel_id = msg.channel().id();
         thread.resume(msg)?;
 
-        self.create_async_thread(thread, channel_id)?;
+        self.create_async_thread(thread, Some(channel_id))?;
 
         Ok(())
     }
@@ -178,7 +180,7 @@ impl LuaState {
         let channel_id = msg.channel().id();
         thread.resume((msg, reactor, reaction, removed))?;
 
-        self.create_async_thread(thread, channel_id)?;
+        self.create_async_thread(thread, Some(channel_id))?;
 
         Ok(())
     }
@@ -333,27 +335,45 @@ impl LuaState {
         Ok(())
     }
 
-    pub fn shutdown(&self) -> Result<bool> {
-        if self.shutting_down.swap(true, Ordering::Relaxed) {
-            self.think_async_callbacks()?;
-
-            let thread: Thread = self.inner.named_registry_value("__ASYNC_SHUTDOWN_THREAD")?;
-
-            if thread.status() != ThreadStatus::Resumable {
-                return Ok(false);
-            }
-
-            thread.resume(())?;
-        } else {
+    pub fn on_loaded(&self) -> Result<()> {
+        if !self.sandbox {
             let bot_tbl: Table = self.inner.globals().get("bot")?;
-            let shutdown_fn: Function = bot_tbl.get("shutdown")?;
-            let thread = self.inner.create_thread(shutdown_fn)?;
+            let on_loaded_fn: Function = bot_tbl.get("on_loaded")?;
+
+            let thread = self.inner.create_thread(on_loaded_fn)?;
             thread.resume(())?;
-            self.inner
-                .set_named_registry_value("__ASYNC_SHUTDOWN_THREAD", thread)?;
+
+            self.create_async_thread(thread, None)?;
         }
 
-        Ok(true)
+        Ok(())
+    }
+
+    pub fn shutdown(&self) -> Result<bool> {
+        if !self.sandbox {
+            if self.shutting_down.swap(true, Ordering::Relaxed) {
+                self.think_async_callbacks()?;
+
+                let thread: Thread = self.inner.named_registry_value("__ASYNC_SHUTDOWN_THREAD")?;
+
+                if thread.status() != ThreadStatus::Resumable {
+                    return Ok(false);
+                }
+
+                thread.resume(())?;
+            } else {
+                let bot_tbl: Table = self.inner.globals().get("bot")?;
+                let shutdown_fn: Function = bot_tbl.get("shutdown")?;
+                let thread = self.inner.create_thread(shutdown_fn)?;
+                thread.resume(())?;
+                self.inner
+                    .set_named_registry_value("__ASYNC_SHUTDOWN_THREAD", thread)?;
+            }
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     pub fn async_sender(&self) -> Sender<LuaAsyncCallback> {
