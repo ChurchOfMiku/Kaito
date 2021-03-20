@@ -20,7 +20,7 @@ pub const DEFAULT_ROLE: &'static str = ROLES[0];
 pub struct Bot {
     ctx: ArcSwapOption<BotContext>,
     db: Arc<BotDb>,
-    _data_path: PathBuf,
+    data_path: PathBuf,
     share_path: PathBuf,
 }
 
@@ -42,9 +42,13 @@ impl Bot {
         Ok(Arc::new(Bot {
             ctx: ArcSwapOption::default(),
             db: BotDb::new(&data_path, &share_path, config).await?,
-            _data_path: data_path,
+            data_path,
             share_path,
         }))
+    }
+
+    pub fn data_path(&self) -> &Path {
+        &self.data_path
     }
 
     pub fn share_path(&self) -> &Path {
@@ -60,7 +64,13 @@ impl Bot {
     }
 
     pub fn get_ctx(&self) -> Arc<BotContext> {
-        self.ctx.load().clone().expect("bot context")
+        loop {
+            if let Some(ctx) = self.ctx.load_full().map(|ctx| ctx.clone()) {
+                return ctx;
+            }
+
+            std::thread::yield_now();
+        }
     }
 
     pub async fn message(&self, msg: Arc<dyn Message<impl Service>>) {

@@ -5,9 +5,12 @@ bot.reaction_hooks = {}
 
 include("./lib/async.lua")
 include("./lib/hooks.lua")
+json = include("./lib/json.lua")
 include("./lib/pagination.lua")
 include("./lib/string.lua")
+include("./lib/table.lua")
 include("./lib/tags.lua")
+include("./lib/time.lua")
 RingBuffer = include("./lib/ring_buffer.lua")
 
 function bot.think()
@@ -313,7 +316,7 @@ local function exec_command(msg, cmd, args)
         end
     end
 
-    if bot.utils.array_has_value(args, "--help") then
+    if table.contains(args, "--help") then
         return bot.help(msg, cmd)
     end
 
@@ -357,6 +360,5 @@ function bot.shutdown()
     hooks.call("shutdown")
 end
 
-include("bot/utils.lua")
 include("bot/commands/**/*.lua")
 include("bot/modules/**/*.lua")

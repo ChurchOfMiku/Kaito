@@ -174,6 +174,39 @@ macro_rules! services {
                 }
             }
 
+            pub async fn channel(&self, channel_id: ChannelId) -> Result<Arc<dyn Channel<impl Service>>> {
+                match channel_id {
+                    $(
+                        ChannelId::$service_module_ident(id) => {
+                            let channel: Arc<<$service as Service>::Channel> = self.$service_ident.as_ref()
+                            .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                            .service()
+                            .channel(id)
+                            .await?;
+
+                            Ok(channel)
+                        }
+                    ),+
+                }
+            }
+
+            pub async fn message(&self, channel_id: ChannelId, message_id: MessageId) -> Result<Arc<dyn Message<impl Service>>> {
+                match (channel_id, message_id) {
+                    $(
+                        (ChannelId::$service_module_ident(chan_id), MessageId::$service_module_ident(msg_id)) => {
+                            let channel: Arc<<$service as Service>::Message> = self.$service_ident.as_ref()
+                            .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                            .service()
+                            .message(chan_id, msg_id)
+                            .await?;
+
+                            Ok(channel)
+                        },
+                    )+
+                    _ => Err(anyhow::anyhow!("channel id and message id does not belong to the same service"))
+                }
+            }
+
             #[allow(unreachable_patterns)]
             pub async fn find_user(&self, channel_id: ChannelId, find: &str) -> Result<Arc<dyn User<impl Service>>> {
                 if let Some(sep) = find.find(':') {

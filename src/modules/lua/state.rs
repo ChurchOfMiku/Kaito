@@ -58,7 +58,7 @@ pub struct LuaState {
     async_sender: Sender<LuaAsyncCallback>,
     async_receiver: Receiver<LuaAsyncCallback>,
     http_rate_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, QuantaClock>>,
-    thread_id: AtomicU64,
+    thread_id: Arc<AtomicU64>,
     shutting_down: AtomicBool,
 }
 
@@ -82,7 +82,9 @@ impl LuaState {
 
         let (async_sender, async_receiver) = unbounded();
 
-        lib_async(&inner, async_sender.clone())?;
+        let thread_id = Arc::new(AtomicU64::new(0));
+
+        lib_async(&inner, async_sender.clone(), thread_id.clone())?;
         lib_os(&inner)?;
 
         let lua_root_path = bot.share_path().join("lua");
@@ -119,7 +121,7 @@ impl LuaState {
             async_sender,
             async_receiver,
             http_rate_limiter,
-            thread_id: AtomicU64::new(0),
+            thread_id,
             shutting_down: AtomicBool::new(false),
         })
     }

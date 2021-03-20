@@ -48,3 +48,11 @@ function string.levenshtein(str1, str2)
 
 	return matrix[len1][len2]
 end
+
+function string.plural(num)
+	if num > 1 then
+		return "s"
+	else
+		return ""
+	end
+end

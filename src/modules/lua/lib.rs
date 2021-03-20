@@ -72,7 +72,14 @@ pub fn include_lua<'a>(
 pub fn lib_include(root_path: PathBuf, state: &Lua) -> Result<()> {
     let include_fn = state.create_function(move |state, path: String| {
         include_lua(state, root_path.as_path(), &path)
-            .map_err(|err| LuaError::RuntimeError(err.to_string()))
+            .map_err(|err| {
+                println!("error including \"{}\": {}", path, err.to_string());
+
+                LuaError::SyntaxError {
+                    message: err.to_string(),
+                    incomplete_input: false,
+                }
+            })
             .map(|val| val.unwrap_or_default())
     })?;
 

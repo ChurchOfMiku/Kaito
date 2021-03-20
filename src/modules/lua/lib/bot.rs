@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_mutex::Mutex;
 use crossbeam::channel::{Sender, TryRecvError};
+use futures::TryFutureExt;
 use mlua::{prelude::*, Error as LuaError, Lua, MetaMethod, Table, UserData, UserDataMethods};
 use std::{
     sync::Arc,
@@ -50,6 +51,61 @@ pub fn lib_bot(
         Ok(fut)
     })?;
     bot_tbl.set("restart_sandbox", bot_restart_sandbox_fn)?;
+
+    let bot2 = bot.clone();
+    let sender2 = sender.clone();
+    let channel_fn = state.create_function(move |state, channel_id: String| {
+        let bot = bot2.clone();
+
+        let channel_id = ChannelId::from_str(&channel_id)
+            .map_err(|err| LuaError::RuntimeError(err.to_string()))?;
+        let sender = sender2.clone();
+
+        let fut = create_lua_future!(
+            state,
+            sender2,
+            (),
+            bot.get_ctx()
+                .services()
+                .channel(channel_id)
+                .and_then(move |channel| {
+                    async move { BotChannel::from_channel(bot, sender, &channel).await }
+                }),
+            |_state, _data: (), res: Result<BotChannel>| { Ok(res?) }
+        );
+
+        Ok(fut)
+    })?;
+    bot_tbl.set("channel", channel_fn)?;
+
+    let bot2 = bot.clone();
+    let sender2 = sender.clone();
+    let message_fn =
+        state.create_function(move |state, (channel_id, message_id): (String, String)| {
+            let bot = bot2.clone();
+
+            let channel_id = ChannelId::from_str(&channel_id)
+                .map_err(|err| LuaError::RuntimeError(err.to_string()))?;
+            let message_id = MessageId::from_str(&message_id)
+                .map_err(|err| LuaError::RuntimeError(err.to_string()))?;
+            let sender = sender2.clone();
+
+            let fut = create_lua_future!(
+                state,
+                sender2,
+                (),
+                bot.get_ctx()
+                    .services()
+                    .message(channel_id, message_id)
+                    .and_then(move |message| {
+                        async move { BotMessage::from_msg(bot, sender, &message).await }
+                    }),
+                |_state, _data: (), res: Result<BotMessage>| { Ok(res?) }
+            );
+
+            Ok(fut)
+        })?;
+    bot_tbl.set("message", message_fn)?;
 
     let bot2 = bot.clone();
     let sender2 = sender.clone();
@@ -279,6 +335,7 @@ pub fn lib_bot(
     )?;
     bot_tbl.set("set_setting", set_setting_fn)?;
 
+    let sender2 = sender.clone();
     let run_sandboxed_lua_fn = state.create_function(
         move |state,
               (user, code, env): (
@@ -295,7 +352,7 @@ pub fn lib_bot(
 
             let fut = create_lua_future!(
                 state,
-                sender,
+                sender2,
                 (),
                 async move {
                     let lua_state = sandbox_state.lock_arc().await;
@@ -364,6 +421,62 @@ pub fn lib_bot(
         },
     )?;
     bot_tbl.set("run_sandboxed_lua", run_sandboxed_lua_fn)?;
+
+    let bot2 = bot.clone();
+    let sender2 = sender.clone();
+    let get_data_fn = state.create_function(move |state, (key,): (String,)| {
+        let bot = bot2.clone();
+
+        if !key.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Err(LuaError::RuntimeError("key must be alphanumeric".into()));
+        }
+
+        let fut = create_lua_future!(
+            state,
+            sender2,
+            (),
+            tokio::fs::read(bot.data_path().join(format!("{}.txt", key))),
+            |state, _data: (), res: Result<Vec<u8>, std::io::Error>| {
+                match res {
+                    Ok(data) => Ok(LuaValue::String(state.create_string(&data)?)),
+                    Err(err) => {
+                        if err.kind() == std::io::ErrorKind::NotFound {
+                            Ok(LuaValue::Nil)
+                        } else {
+                            Err(err.into())
+                        }
+                    }
+                }
+            }
+        );
+
+        Ok(fut)
+    })?;
+    bot_tbl.set("get_data", get_data_fn)?;
+
+    let bot2 = bot.clone();
+    let set_data_fn = state.create_function(move |state, (key, value): (String, String)| {
+        let bot = bot2.clone();
+
+        if !key.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Err(LuaError::RuntimeError("key must be alphanumeric".into()));
+        }
+
+        let fut = create_lua_future!(
+            state,
+            sender,
+            (),
+            tokio::fs::write(bot.data_path().join(format!("{}.txt", key)), value),
+            |_state, _data: (), res: Result<(), std::io::Error>| {
+                res?;
+
+                Ok(())
+            }
+        );
+
+        Ok(fut)
+    })?;
+    bot_tbl.set("set_data", set_data_fn)?;
 
     bot_tbl.set("ROLES", ROLES)?;
 

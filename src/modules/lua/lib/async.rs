@@ -4,7 +4,13 @@ use mlua::{
     prelude::{LuaError, LuaMultiValue},
     Function, Lua, RegistryKey, Table,
 };
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use thiserror::Error;
 
 use super::super::state::LuaAsyncCallback;
@@ -62,7 +68,11 @@ macro_rules! create_lua_future {
     }};
 }
 
-pub fn lib_async(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
+pub fn lib_async(
+    state: &Lua,
+    sender: Sender<LuaAsyncCallback>,
+    thread_id: Arc<AtomicU64>,
+) -> Result<()> {
     let async_tbl = state.create_table()?;
 
     // async.delay
@@ -86,6 +96,10 @@ pub fn lib_async(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
         Ok(fut)
     })?;
     async_tbl.set("delay", async_delay)?;
+
+    let gen_thread_id_fn = state
+        .create_function(move |_state, (): ()| Ok(thread_id.fetch_add(1, Ordering::Relaxed)))?;
+    async_tbl.set("gen_thread_id", gen_thread_id_fn)?;
 
     state.globals().set("async", async_tbl)?;
 
