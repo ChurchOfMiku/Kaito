@@ -12,7 +12,8 @@ hooks.add("message", "thanks", function(msg)
     local dist = string.levenshtein(string.sub(string.lower(msg.content), 1, 12), "thanks kaito")
 
     if dist < 3 then
-        local reply = "You're welcome"
+        local replies = { "You're welcome", "No problem!", "Nya~!" }
+        local reply = replies[math.random(1, #replies)]
         local reply_chars = count_chars(reply)
 
         local caps = math.floor(count_caps(msg.content) * (reply_chars / count_chars(msg.content)) + 0.5)
