@@ -14,6 +14,7 @@ include("./lib/time.lua")
 RingBuffer = include("./lib/ring_buffer.lua")
 
 function bot.think()
+    hooks.call("think")
 end
 
 local function get_abs_cmd(cmd)
