@@ -186,21 +186,21 @@ function bot.votes.get_vote_for_channel(channel)
 end
 
 function bot.votes.create(author, channel, title, time, options)
-    if time == 0 then error("invalid time spesified") end
+    if time == 0 then return channel:send("error: invalid time spesified") end
     if not channel:supports_feature(bot.FEATURES.Edit) then
-        error("channel does not support message editing which is required for votes")
+        return channel:send("error: channel does not support message editing which is required for votes")
     end
 
     if #options == 0 then
-        error("at least one option is required")
+        return channel:send("at least one option is required")
     end
 
     if #options > #VOTE_EMOJIS then
-        error("maximum amount of vote options is " .. #VOTE_EMOJIS)
+        return channel:send("error: maximum amount of vote options is " .. #VOTE_EMOJIS)
     end
 
     if bot.votes.get_vote_for_channel(channel) then
-        error("there is already an active vote for the channel")
+        return channel:send("error: there is already an active vote for the channel")
     end
 
     local vote = {}
@@ -216,7 +216,7 @@ function bot.votes.create(author, channel, title, time, options)
 
     for k,v in pairs(bot.votes.active_votes) do
         if v.channel.id == channel.id then
-            error("there is already an active vote in the current channel")
+            return channel:send("error: there is already an active vote in the current channel")
         end
     end
 
