@@ -79,7 +79,6 @@ bot.add_command("tag", {
                     key = "force",
                     long = "force",
                     description = "Force (admin)",
-                    required = true,
                 }
             },
             description = "Delete a tag",
@@ -119,7 +118,6 @@ bot.add_command("tag", {
                     key = "force",
                     long = "force",
                     description = "Force (admin)",
-                    required = true,
                 }
             },
             description = "Edit a tag",
@@ -303,6 +301,11 @@ bot.add_command("tag", {
                     description = "Tag name",
                     required = true,
                 },
+                {
+                    key = "force",
+                    long = "force",
+                    description = "Force (admin)",
+                }
             },
             description = "Accept a gifted tag",
             callback = function(msg, args)
@@ -312,8 +315,10 @@ bot.add_command("tag", {
                     return msg:reply("error: unknown tag")
                 end
 
-                if tag.transfer_uid ~= msg.author.uid then
-                    return msg:reply("error: the tag is not being transfered to you"):await()
+                if not args.force or not bot.has_role_or_higher("admin", msg.author.role) then
+                    if tag.transfer_uid ~= msg.author.uid then
+                        return msg:reply("error: the tag is not being transfered to you"):await()
+                    end
                 end
 
                 tag:set_transfer_user(nil):await()
