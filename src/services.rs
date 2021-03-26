@@ -190,6 +190,7 @@ macro_rules! services {
                 }
             }
 
+            #[allow(unreachable_patterns)]
             pub async fn message(&self, channel_id: ChannelId, message_id: MessageId) -> Result<Arc<dyn Message<impl Service>>> {
                 match (channel_id, message_id) {
                     $(

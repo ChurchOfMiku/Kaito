@@ -7,7 +7,7 @@ mod lua;
 use crate::{
     bot::Bot,
     config::Config,
-    services::{ChannelId, Message, ServerId, Service, User},
+    services::{ChannelId, Message, MessageId, ServerId, Service, User},
     settings::Settings,
 };
 
@@ -42,6 +42,21 @@ macro_rules! modules_loader {
                 $(
                     if self.$module_ident.is_enabled() {
                         if let Err(err) = self.$module_ident.module().message_update(msg.clone(), old_msg.clone()).await {
+                            println!("error during executing module {}: {}", self.$module_ident.module().name(), err.to_string())
+                        };
+                    }
+                )+
+            }
+
+            pub async fn message_delete(
+                &self,
+                server_id: Option<ServerId>,
+                channel_id: ChannelId,
+                message_id: MessageId,
+            ) {
+                $(
+                    if self.$module_ident.is_enabled() {
+                        if let Err(err) = self.$module_ident.module().message_delete(server_id, channel_id, message_id).await {
                             println!("error during executing module {}: {}", self.$module_ident.module().name(), err.to_string())
                         };
                     }
@@ -113,6 +128,13 @@ pub trait Module: 'static + Send + Sync + Sized {
         msg: Arc<dyn Message<impl Service>>,
         old_msg: Option<Arc<dyn Message<impl Service>>>,
     ) -> Result<()>;
+    async fn message_delete(
+        &self,
+        server_id: Option<ServerId>,
+        channel_id: ChannelId,
+        message_id: MessageId,
+    ) -> Result<()>;
+
     async fn reaction(
         &self,
         msg: Arc<dyn Message<impl Service>>,

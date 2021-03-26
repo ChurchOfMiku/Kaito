@@ -10,7 +10,7 @@ pub mod db;
 use crate::{
     config::Config,
     modules::Modules,
-    services::{Message, Service, Services, User},
+    services::{ChannelId, Message, MessageId, ServerId, Service, Services, User},
 };
 use db::BotDb;
 
@@ -87,6 +87,19 @@ impl Bot {
         let ctx = get_ctx!(self);
 
         ctx.modules().message_update(msg, old_msg).await;
+    }
+
+    pub async fn message_delete(
+        &self,
+        server_id: Option<ServerId>,
+        channel_id: ChannelId,
+        message_id: MessageId,
+    ) {
+        let ctx = get_ctx!(self);
+
+        ctx.modules()
+            .message_delete(server_id, channel_id, message_id)
+            .await;
     }
 
     pub async fn reaction(

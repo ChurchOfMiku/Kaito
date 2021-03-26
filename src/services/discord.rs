@@ -9,6 +9,7 @@ use serenity::{
         channel::{Message, Reaction, ReactionType},
         event::MessageUpdateEvent,
         gateway::Ready,
+        id::{ChannelId, GuildId, MessageId},
     },
     prelude::*,
     CacheAndHttp,
@@ -16,6 +17,7 @@ use serenity::{
 use std::{
     str::FromStr,
     sync::{Arc, Mutex},
+    u64,
 };
 use thiserror::Error;
 
@@ -109,6 +111,23 @@ impl EventHandler for SerenityHandler {
             });
             self.service.bot.message_update(msg, old_msg).await;
         }
+    }
+
+    async fn message_delete(
+        &self,
+        _ctx: Context,
+        channel_id: ChannelId,
+        deleted_message_id: MessageId,
+        guild_id: Option<GuildId>,
+    ) {
+        self.service
+            .bot
+            .message_delete(
+                guild_id.map(|id| super::ServerId::Discord(*id.as_u64())),
+                super::ChannelId::Discord(*channel_id.as_u64()),
+                super::MessageId::Discord(*deleted_message_id.as_u64()),
+            )
+            .await;
     }
 
     async fn reaction_add(&self, _ctx: Context, reaction: Reaction) {

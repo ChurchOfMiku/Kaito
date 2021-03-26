@@ -28,7 +28,10 @@ use super::{
     },
 };
 use crate::{
-    bot::Bot, message::MessageSettings, services::ChannelId, utils::escape_untrusted_text,
+    bot::Bot,
+    message::MessageSettings,
+    services::{ChannelId, MessageId, ServerId},
+    utils::escape_untrusted_text,
 };
 
 pub type LuaAsyncCallback = (
@@ -142,9 +145,34 @@ impl LuaState {
         Ok(())
     }
 
+    pub fn run_message_delete(
+        &self,
+        server_id: Option<ServerId>,
+        channel_id: ChannelId,
+        message_id: MessageId,
+    ) -> Result<()> {
+        let bot_tbl: Table = self.inner.globals().get("bot")?;
+        let on_message_delete_fn: Function = bot_tbl.get("on_message_delete")?;
+
+        let thread = self.inner.create_thread(on_message_delete_fn)?;
+        thread.resume(LuaMultiValue::from_vec(vec![
+            if let Some(server_id) = server_id {
+                LuaValue::String(self.inner.create_string(&server_id.to_short_str())?)
+            } else {
+                LuaValue::Nil
+            },
+            LuaValue::String(self.inner.create_string(&channel_id.to_short_str())?),
+            LuaValue::String(self.inner.create_string(&message_id.to_short_str())?),
+        ]))?;
+
+        self.create_async_thread(thread, None)?;
+
+        Ok(())
+    }
+
     pub fn run_bot_command(&self, msg: BotMessage, args: Vec<String>, edited: bool) -> Result<()> {
-        let sandbox_tbl: Table = self.inner.globals().get("bot")?;
-        let on_command_fn: Function = sandbox_tbl.get("on_command")?;
+        let bot_tbl: Table = self.inner.globals().get("bot")?;
+        let on_command_fn: Function = bot_tbl.get("on_command")?;
 
         let thread = self.inner.create_thread(on_command_fn)?;
         let channel_id = msg.channel().id();
@@ -156,8 +184,8 @@ impl LuaState {
     }
 
     pub fn run_bot_message(&self, msg: BotMessage) -> Result<()> {
-        let sandbox_tbl: Table = self.inner.globals().get("bot")?;
-        let on_message_fn: Function = sandbox_tbl.get("on_message")?;
+        let bot_tbl: Table = self.inner.globals().get("bot")?;
+        let on_message_fn: Function = bot_tbl.get("on_message")?;
 
         let thread = self.inner.create_thread(on_message_fn)?;
         let channel_id = msg.channel().id();
@@ -175,8 +203,8 @@ impl LuaState {
         reaction: String,
         removed: bool,
     ) -> Result<()> {
-        let sandbox_tbl: Table = self.inner.globals().get("bot")?;
-        let on_reaction_fn: Function = sandbox_tbl.get("on_reaction")?;
+        let bot_tbl: Table = self.inner.globals().get("bot")?;
+        let on_reaction_fn: Function = bot_tbl.get("on_reaction")?;
 
         let thread = self.inner.create_thread(on_reaction_fn)?;
         let channel_id = msg.channel().id();

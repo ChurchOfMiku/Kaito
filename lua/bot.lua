@@ -1,18 +1,23 @@
 bot = bot or {}
 bot.cmds = bot.cmds or {}
-bot.cache = bot.cache or {messages = {}}
 bot.aliases = bot.aliases or {}
 bot.reaction_hooks = {}
 
 include("./lib/async.lua")
 include("./lib/hooks.lua")
 json = include("./lib/json.lua")
+Lru = include("./lib/lru.lua")
 include("./lib/pagination.lua")
+RingBuffer = include("./lib/ring_buffer.lua")
 include("./lib/string.lua")
 include("./lib/table.lua")
 include("./lib/tags.lua")
 include("./lib/time.lua")
-RingBuffer = include("./lib/ring_buffer.lua")
+
+bot.cache = bot.cache or {
+    messages = {},
+    commands = Lru(32)
+}
 
 function bot.think()
     hooks.call("think")
@@ -193,7 +198,7 @@ function bot.help(msg, cmd)
             ((cmd.description and cmd.description .. "\n") or "") ..
                 "\n" .. "USAGE:\n   " .. bot.icode_block(msg.channel, get_abs_cmd(cmd) .. " " .. usage_options .. usage_arguments) .. arguments .. options .. sub_commands
 
-    msg:reply(out)
+    return msg:reply(out):await()
 end
 
 function bot.parse_args(cmd, args)
@@ -297,7 +302,7 @@ local function exec_command(msg, cmd, args)
 
     if cmd.role then
         if not bot.has_role_or_higher(cmd.role, msg.author.role) then
-            return msg:reply("permission denied: this command requires the role of  " .. cmd.role .. " or higher.")
+            return msg:reply("permission denied: this command requires the role of  " .. cmd.role .. " or higher."):await()
         end
     end
 
@@ -325,10 +330,10 @@ local function exec_command(msg, cmd, args)
     local succ, res, extra_args = bot.parse_args(cmd, args)
 
     if not succ then
-        return msg:reply("argument error: " .. res .. '\nUse "' .. get_abs_cmd(cmd) .. ' --help" for more info.')
+        return msg:reply("argument error: " .. res .. '\nUse "' .. get_abs_cmd(cmd) .. ' --help" for more info.'):await()
     end
 
-    cmd.callback(msg, res, extra_args)
+    return cmd.callback(msg, res, extra_args)
 end
 
 function bot.on_command(msg, args, edited)
@@ -341,7 +346,30 @@ function bot.on_command(msg, args, edited)
         return
     end
 
-    exec_command(msg, cmd, args)
+    local count = 0
+
+    if edited then
+        local entry = bot.cache.commands:get(msg.id)
+        if entry then
+            -- Delete the old response
+            if entry.reply and entry.reply.delete then
+                if entry.reply.channel:supports_feature(bot.FEATURES.Edit) then
+                    entry.reply:delete()
+                    bot.cache.commands:delete(msg.id)
+                end
+            end
+
+            -- Only care about message edits the first 4 times
+            if entry.count > 3 then
+                return
+            end
+            
+            count = entry.count + 1
+        end
+    end
+
+    local reply = exec_command(msg, cmd, args)
+    bot.cache.commands:set(msg.id, {reply = reply, count = count})
 end
 
 function bot.on_message(msg)
@@ -353,6 +381,20 @@ function bot.on_message(msg)
         bot.cache.messages[msg.channel.id] = channel_buffer
     end
     channel_buffer:push(msg)
+end
+
+function bot.on_message_delete(server_id, channel_id, msg_id)
+    local entry = bot.cache.commands:get(msg_id)
+
+    -- Delete the response if it was a command
+    if entry and entry.reply and entry.reply.delete then
+        if entry.reply.channel:supports_feature(bot.FEATURES.Edit) then
+            entry.reply:delete()
+            bot.cache.commands:delete(msg_id)
+        end
+    end
+
+    hooks.call("message_delete", server_id, channel_id, msg_id)
 end
 
 function bot.on_reaction(msg, reactor, reaction, removed)

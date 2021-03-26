@@ -49,25 +49,27 @@ function pagination.create(channel, options)
     local msg = channel:send(create_content()):await()
 
     if interactive and msg then
-        bot.reaction_hooks[msg.id] = function(msg, reactor, reaction, removed)
-            if reactor.uid == options.caller.uid or bot.has_role_or_higher("admin", reactor.role) then
-                if reaction == pagination.EMOJI_LEFT_ARROW or reaction == pagination.EMOJI_RIGHT_ARROW then
-                    local offset = reaction == pagination.EMOJI_RIGHT_ARROW and 1 or -1
-                    ctx.page_num = math.min(math.max(ctx.page_num + offset, 1), tot_pages)
-                    msg:edit(create_content()):await()
-                elseif reaction == pagination.EMOJI_CROSS then
-                    msg:delete():await()
+        async.spawn(function()
+            bot.reaction_hooks[msg.id] = function(msg, reactor, reaction, removed)
+                if reactor.uid == options.caller.uid or bot.has_role_or_higher("admin", reactor.role) then
+                    if reaction == pagination.EMOJI_LEFT_ARROW or reaction == pagination.EMOJI_RIGHT_ARROW then
+                        local offset = reaction == pagination.EMOJI_RIGHT_ARROW and 1 or -1
+                        ctx.page_num = math.min(math.max(ctx.page_num + offset, 1), tot_pages)
+                        msg:edit(create_content()):await()
+                    elseif reaction == pagination.EMOJI_CROSS then
+                        msg:delete():await()
+                    end
                 end
             end
-        end
 
-        msg:react(pagination.EMOJI_LEFT_ARROW):await()
-        msg:react(pagination.EMOJI_RIGHT_ARROW):await()
-        msg:react(pagination.EMOJI_CROSS):await()
+            msg:react(pagination.EMOJI_LEFT_ARROW):await()
+            msg:react(pagination.EMOJI_RIGHT_ARROW):await()
+            msg:react(pagination.EMOJI_CROSS):await()
 
-        async.delay(pagination.INTERACTIVE_TIME):await()
+            async.delay(pagination.INTERACTIVE_TIME):await()
 
-        bot.reaction_hooks[msg.id] = nil
+            bot.reaction_hooks[msg.id] = nil
+        end)
     end
 
     return msg

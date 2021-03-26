@@ -19,7 +19,8 @@ use crate::{
     bot::Bot,
     message::MessageSettings,
     services::{
-        Channel, ChannelId, Message, Server, ServerId, Service, ServiceFeatures, ServiceKind, User,
+        Channel, ChannelId, Message, MessageId, Server, ServerId, Service, ServiceFeatures,
+        ServiceKind, User,
     },
     settings::prelude::*,
     utils::{escape_untrusted_text, shell_parser::parse_shell_args},
@@ -212,6 +213,19 @@ impl Module for LuaModule {
             }
             None => Ok(()),
         }
+    }
+
+    async fn message_delete(
+        &self,
+        server_id: Option<ServerId>,
+        channel_id: ChannelId,
+        message_id: MessageId,
+    ) -> Result<()> {
+        let lua_state = self.get_bot_state().await?;
+
+        lua_state.run_message_delete(server_id, channel_id, message_id)?;
+
+        Ok(())
     }
 
     async fn reaction(
