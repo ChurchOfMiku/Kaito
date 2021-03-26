@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_mutex::{Mutex, MutexGuardArc};
 use crossbeam::channel::TryRecvError;
+use lru::LruCache;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -28,11 +29,14 @@ use crate::{
 use lib::bot::BotMessage;
 use state::{LuaState, SandboxMsg, SandboxTerminationReason};
 
+pub type LuaSandboxReplies = Mutex<LruCache<MessageId, (bool, Vec<(ChannelId, MessageId)>)>>;
+
 pub struct LuaModule {
     bot: Arc<Bot>,
     settings: Arc<LuaModuleSettings>,
     bot_state: Arc<Mutex<LuaState>>,
     sandbox_state: Arc<Mutex<LuaState>>,
+    lua_sandbox_replies: Arc<LuaSandboxReplies>,
 }
 
 settings! {
@@ -56,11 +60,12 @@ impl Module for LuaModule {
     type ModuleSettings = LuaModuleSettings;
 
     async fn load(bot: Arc<Bot>, _config: ()) -> Result<Arc<LuaModule>> {
+        let lua_sandbox_replies = Arc::new(Mutex::new(LruCache::new(64)));
         let sandbox_state = Arc::new(Mutex::new(LuaState::create_state(&bot, true, None)?));
         let bot_state = Arc::new(Mutex::new(LuaState::create_state(
             &bot,
             false,
-            Some(sandbox_state.clone()),
+            Some((sandbox_state.clone(), lua_sandbox_replies.clone())),
         )?));
 
         let bot_state2 = bot_state.clone();
@@ -86,6 +91,7 @@ impl Module for LuaModule {
             settings: LuaModuleSettings::create(bot)?,
             bot_state,
             sandbox_state,
+            lua_sandbox_replies,
         }))
     }
 
@@ -292,6 +298,34 @@ impl LuaModule {
         Ok(())
     }
 
+    async fn should_abort_sandbox(&self, cmd_msg_id: MessageId) -> bool {
+        self.lua_sandbox_replies
+            .lock()
+            .await
+            .get(&cmd_msg_id)
+            .map(|(abort, _)| *abort)
+            .unwrap_or(false)
+    }
+
+    async fn add_to_sandbox_replies(
+        &self,
+        cmd_msg_id: MessageId,
+        reply: &Arc<dyn Message<impl Service>>,
+    ) -> Result<()> {
+        let mut replies = self.lua_sandbox_replies.lock().await;
+
+        if let Some(replies) = replies.get_mut(&cmd_msg_id) {
+            replies.1.push((reply.channel().await?.id(), reply.id()));
+        } else {
+            replies.put(
+                cmd_msg_id,
+                (false, vec![(reply.channel().await?.id(), reply.id())]),
+            );
+        }
+
+        Ok(())
+    }
+
     async fn eval_sandbox(
         &self,
         msg: Arc<dyn Message<impl Service>>,
@@ -317,6 +351,11 @@ impl LuaModule {
         let mut aborting = None;
 
         while aborting.is_none() {
+            // Check if it should abort
+            if self.should_abort_sandbox(msg.id()).await {
+                return Ok(());
+            }
+
             match recv.try_recv() {
                 Ok(out) => match out {
                     SandboxMsg::Out(out) => {
@@ -336,7 +375,8 @@ impl LuaModule {
                     }
                     SandboxMsg::Error(err) => {
                         if errors && !err.is_empty() {
-                            msg.channel()
+                            let reply = msg
+                                .channel()
                                 .await?
                                 .send(
                                     escape_untrusted_text(
@@ -346,28 +386,40 @@ impl LuaModule {
                                     MessageSettings::default(),
                                 )
                                 .await?;
+
+                            self.add_to_sandbox_replies(msg.id(), &(reply as Arc<_>))
+                                .await?;
                         }
                     }
                     SandboxMsg::Terminated(reason) => match reason {
                         SandboxTerminationReason::Done => {}
                         SandboxTerminationReason::ExecutionQuota => {
-                            msg.channel()
+                            let reply = msg
+                                .channel()
                                 .await?
                                 .send(
                                     "Execution quota exceeded, terminated execution",
                                     MessageSettings::default(),
                                 )
                                 .await?;
+                            self.add_to_sandbox_replies(msg.id(), &(reply as Arc<_>))
+                                .await?;
+
                             break;
                         }
                         SandboxTerminationReason::TimeLimit => {
-                            msg.channel()
+                            let reply = msg
+                                .channel()
                                 .await?
                                 .send(
                                     "Execution time limit reached, terminated execution",
                                     MessageSettings::default(),
                                 )
                                 .await?;
+
+                            self.add_to_sandbox_replies(msg.id(), &(reply as Arc<_>))
+                                .await?;
+
                             break;
                         }
                     },
@@ -411,9 +463,13 @@ impl LuaModule {
 
                     sandbox_state.limits.set_characters_left(characters_left);
 
-                    msg.channel()
+                    let reply = msg
+                        .channel()
                         .await?
                         .send(out, MessageSettings::default())
+                        .await?;
+
+                    self.add_to_sandbox_replies(msg.id(), &(reply as Arc<_>))
                         .await?;
 
                     last_msg = Instant::now();
@@ -423,9 +479,13 @@ impl LuaModule {
         }
 
         if let Some(aborting) = aborting {
-            msg.channel()
+            let reply = msg
+                .channel()
                 .await?
                 .send(aborting, MessageSettings::default())
+                .await?;
+
+            self.add_to_sandbox_replies(msg.id(), &(reply as Arc<_>))
                 .await?;
         }
 

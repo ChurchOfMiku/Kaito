@@ -26,6 +26,7 @@ use super::{
         r#async::lib_async,
         tags::lib_tags,
     },
+    LuaSandboxReplies,
 };
 use crate::{
     bot::Bot,
@@ -69,7 +70,7 @@ impl LuaState {
     pub fn create_state(
         bot: &Arc<Bot>,
         sandbox: bool,
-        sandbox_state: Option<Arc<Mutex<LuaState>>>,
+        bot_state: Option<(Arc<Mutex<LuaState>>, Arc<LuaSandboxReplies>)>,
     ) -> Result<LuaState> {
         // Avoid loading os and io
         let inner = unsafe {
@@ -101,7 +102,7 @@ impl LuaState {
                 &inner,
                 bot,
                 async_sender.clone(),
-                sandbox_state.expect("sandbox state for bot state"),
+                bot_state.expect("sandbox state for bot state"),
             )?;
             http::lib_http(&inner, async_sender.clone())?;
             lib_tags(&inner, bot, async_sender.clone())?;
@@ -176,9 +177,11 @@ impl LuaState {
 
         let thread = self.inner.create_thread(on_command_fn)?;
         let channel_id = msg.channel().id();
-        thread.resume((msg, args, edited))?;
+        thread.resume((msg.clone(), args, edited))?;
 
         self.create_async_thread(thread, Some(channel_id))?;
+
+        self.run_bot_message(msg)?;
 
         Ok(())
     }

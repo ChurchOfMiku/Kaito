@@ -8,7 +8,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::super::state::{LuaAsyncCallback, LuaState, SandboxMsg, SandboxTerminationReason};
+use super::super::{
+    state::{LuaAsyncCallback, LuaState, SandboxMsg, SandboxTerminationReason},
+    LuaSandboxReplies,
+};
 use crate::{
     bot::{
         db::{Uid, User as DbUser},
@@ -27,7 +30,7 @@ pub fn lib_bot(
     state: &Lua,
     bot: &Arc<Bot>,
     sender: Sender<LuaAsyncCallback>,
-    sandbox_state: Arc<Mutex<LuaState>>,
+    (sandbox_state, lua_sandbox_replies): (Arc<Mutex<LuaState>>, Arc<LuaSandboxReplies>),
 ) -> Result<()> {
     let bot_tbl = state.create_table()?;
 
@@ -51,6 +54,65 @@ pub fn lib_bot(
         Ok(fut)
     })?;
     bot_tbl.set("restart_sandbox", bot_restart_sandbox_fn)?;
+
+    let bot2 = bot.clone();
+    let sender2 = sender.clone();
+    let delete_lua_replies_fn = state.create_function(move |state, message_id: String| {
+        let ctx = bot2.get_ctx();
+
+        let message_id = MessageId::from_str(&message_id)
+            .map_err(|err| LuaError::RuntimeError(err.to_string()))?;
+
+        let sandbox_replies = lua_sandbox_replies.clone();
+        let fut = create_lua_future!(
+            state,
+            sender2,
+            (),
+            async move {
+                let mut exists = false;
+
+                // Abort
+                {
+                    if let Some((abort, _)) = sandbox_replies.lock().await.get_mut(&message_id) {
+                        *abort = true;
+                        exists = true;
+                    }
+                }
+
+                if exists {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+                    let mut err = None;
+                    let mut deleted = false;
+
+                    let mut replies = sandbox_replies.lock().await;
+                    if let Some((_, messages)) = replies.get_mut(&message_id) {
+                        for (channel_id, message_id) in messages.drain(..) {
+                            match ctx.services().delete_message(channel_id, message_id).await {
+                                Ok(_) => deleted = true,
+                                Err(e) => {
+                                    err = Some(e);
+                                    break;
+                                }
+                            };
+                        }
+                    }
+
+                    if let Some(err) = err {
+                        Err(err)
+                    } else {
+                        Ok(deleted)
+                    }
+                } else {
+                    Ok(false)
+                }
+            },
+            |_state, _data: (), res: Result<bool>| { Ok(res?) }
+        );
+
+        Ok(fut)
+    })?;
+    bot_tbl.set("delete_lua_replies", delete_lua_replies_fn)?;
 
     let bot2 = bot.clone();
     let sender2 = sender.clone();

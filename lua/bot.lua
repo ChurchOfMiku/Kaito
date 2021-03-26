@@ -16,7 +16,7 @@ include("./lib/time.lua")
 
 bot.cache = bot.cache or {
     messages = {},
-    commands = Lru(32)
+    commands = Lru(64)
 }
 
 function bot.think()
@@ -352,13 +352,7 @@ function bot.on_command(msg, args, edited)
         local entry = bot.cache.commands:get(msg.id)
         if entry then
             -- Delete the old response
-            if entry.reply and entry.reply.delete then
-                if entry.reply.channel:supports_feature(bot.FEATURES.Edit) then
-                    entry.reply:delete()
-                    bot.cache.commands:delete(msg.id)
-                end
-            end
-
+            bot.delete_reply(entry)
             -- Only care about message edits the first 4 times
             if entry.count > 3 then
                 return
@@ -369,29 +363,35 @@ function bot.on_command(msg, args, edited)
     end
 
     local reply = exec_command(msg, cmd, args)
-    bot.cache.commands:set(msg.id, {reply = reply, count = count})
+    bot.cache.commands:set(msg.id, {reply = reply, count = count, uid = msg.author.uid})
 end
 
 function bot.on_message(msg)
     hooks.call("message", msg)
 
-    local channel_buffer  = bot.cache.messages[msg.channel_id]
-    if not bot.cache.messages[msg.channel_id] then
-        channel_buffer = RingBuffer(12)
+    local channel_buffer  = bot.cache.messages[msg.channel.id]
+    if not bot.cache.messages[msg.channel.id] then
+        channel_buffer = RingBuffer(32)
         bot.cache.messages[msg.channel.id] = channel_buffer
     end
     channel_buffer:push(msg)
+end
+
+function bot.delete_reply(entry)
+    if entry.reply and entry.reply.delete then
+        if entry.reply.channel:supports_feature(bot.FEATURES.Edit) then
+            entry.reply:delete()
+            bot.cache.commands:delete(entry.reply.id)
+        end
+    end
 end
 
 function bot.on_message_delete(server_id, channel_id, msg_id)
     local entry = bot.cache.commands:get(msg_id)
 
     -- Delete the response if it was a command
-    if entry and entry.reply and entry.reply.delete then
-        if entry.reply.channel:supports_feature(bot.FEATURES.Edit) then
-            entry.reply:delete()
-            bot.cache.commands:delete(msg_id)
-        end
+    if entry then
+        bot.delete_reply(entry)
     end
 
     hooks.call("message_delete", server_id, channel_id, msg_id)
