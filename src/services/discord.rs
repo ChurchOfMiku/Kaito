@@ -7,6 +7,7 @@ use serenity::{
     http::CacheHttp,
     model::{
         channel::{Message, Reaction, ReactionType},
+        event::MessageUpdateEvent,
         gateway::Ready,
     },
     prelude::*,
@@ -92,6 +93,22 @@ impl EventHandler for SerenityHandler {
     async fn message(&self, _ctx: Context, msg: Message) {
         let msg = message::DiscordMessage::new(msg, self.service.clone());
         self.service.bot.message(Arc::new(msg)).await;
+    }
+
+    async fn message_update(
+        &self,
+        _ctx: Context,
+        old: Option<Message>,
+        new: Option<Message>,
+        _event: MessageUpdateEvent,
+    ) {
+        if let Some(new) = new {
+            let msg = Arc::new(message::DiscordMessage::new(new, self.service.clone()));
+            let old_msg = old.map(|msg| {
+                Arc::new(message::DiscordMessage::new(msg, self.service.clone())) as Arc<_>
+            });
+            self.service.bot.message_update(msg, old_msg).await;
+        }
     }
 
     async fn reaction_add(&self, _ctx: Context, reaction: Reaction) {

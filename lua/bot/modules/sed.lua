@@ -1,12 +1,8 @@
-sed = sed or {}
-sed.channels = sed.channels or {}
-
 hooks.add("message", "sed", function(msg)
-    local channel_buffer = sed.channels[msg.channel.id]
+    local channel_buffer = bot.cache.messages[msg.channel.id]
 
     if not channel_buffer then
-        sed.channels[msg.channel.id] = RingBuffer(12)
-        channel_buffer = sed.channels[msg.channel.id]
+        return
     end
 
     local find, replace = string.match(msg.content, "^sed/(.*)/(.*)/$")
@@ -22,7 +18,5 @@ hooks.add("message", "sed", function(msg)
                 break
             end
         end
-    else
-        channel_buffer:push(msg)
     end
 end)

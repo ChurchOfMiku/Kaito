@@ -19,6 +19,6 @@ bot.add_command("gpt", {
         msg.channel:send_typing()
 
         local res = http.fetch("http://127.0.0.1:3000/gpt", { body = input }):await()
-        msg:reply(msg.channel:escape_text(res.body))
+        return msg:reply(msg.channel:escape_text(res.body)):await()
     end,
 })

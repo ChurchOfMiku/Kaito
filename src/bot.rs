@@ -79,6 +79,16 @@ impl Bot {
         ctx.modules().message(msg).await;
     }
 
+    pub async fn message_update(
+        &self,
+        msg: Arc<dyn Message<impl Service>>,
+        old_msg: Option<Arc<dyn Message<impl Service>>>,
+    ) {
+        let ctx = get_ctx!(self);
+
+        ctx.modules().message_update(msg, old_msg).await;
+    }
+
     pub async fn reaction(
         &self,
         msg: Arc<dyn Message<impl Service>>,

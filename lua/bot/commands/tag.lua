@@ -13,9 +13,9 @@ bot.add_command("tag", {
         local tag = tags.find_tag(msg.channel.server, args.tag):await()
 
         if tag then
-            msg:reply(msg.channel:escape_text(tags.exec_tag(msg, msg.author, msg.channel, tag, extra_args)))
+            return msg:reply(msg.channel:escape_text(tags.exec_tag(msg, msg.author, msg.channel, tag, extra_args))):await()
         else
-            msg:reply("error: unknown tag")
+            return msg:reply("error: unknown tag"):await()
         end
     end,
     sub_commands = {
@@ -37,11 +37,11 @@ bot.add_command("tag", {
             description = "Create a new tag",
             callback = function(msg, args, extra_args)
                 if not tags.is_valid_name(args.tag) then
-                    return msg:reply("error: the tag name must be alphanumeric")
+                    return msg:reply("error: the tag name must be alphanumeric"):await()
                 end
 
                 if #args.tag > tags.MAX_NAME_LIMIT then
-                    return msg:reply("error: the tag name cannot be longer than " .. tags.MAX_NAME_LIMIT .. " characters")
+                    return msg:reply("error: the tag name cannot be longer than " .. tags.MAX_NAME_LIMIT .. " characters"):await()
                 end
 
                 local value = args.value
@@ -51,19 +51,19 @@ bot.add_command("tag", {
                 end
 
                 if #value > tags.MAX_VALUE_LIMIT then
-                    return msg:reply("error: the tag value cannot be longer than " .. tags.MAX_VALUE_LIMIT .. " characters")
+                    return msg:reply("error: the tag value cannot be longer than " .. tags.MAX_VALUE_LIMIT .. " characters"):await()
                 end
 
                 if tags.count_user_tags(msg.author):await() > tags.MAX_USER_TAGS then
-                    return msg:reply("error: the max tags owned limit on " .. tags.MAX_USER_TAGS .. " tags has been reached")
+                    return msg:reply("error: the max tags owned limit on " .. tags.MAX_USER_TAGS .. " tags has been reached"):await()
                 end
 
                 local error = tags.create_tag(msg.author, msg.channel.server, args.tag, value):await()
 
                 if error then
-                    msg:reply("error: " .. msg.channel:escape_text(error))
+                    return msg:reply("error: " .. msg.channel:escape_text(error)):await()
                 else
-                    msg:reply("sucessfully created tag \"" .. msg.channel:escape_text(args.tag) .. "\"")
+                    return msg:reply("sucessfully created tag \"" .. msg.channel:escape_text(args.tag) .. "\""):await()
                 end
             end,
         }),
@@ -87,18 +87,18 @@ bot.add_command("tag", {
                 local tag = tags.find_tag(msg.channel.server, args.tag):await()
 
                 if not tag then
-                    return msg:reply("error: unknown tag")
+                    return msg:reply("error: unknown tag"):await()
                 end
 
                 if not args.force or not bot.has_role_or_higher("admin", msg.author.role) then
                     if tag.uid ~= msg.author.uid then
-                        return msg:reply("error: access denied")
+                        return msg:reply("error: access denied"):await()
                     end
                 end
 
                 tag:delete():await()
 
-                msg:reply("the tag \"" .. msg.channel:escape_text(args.tag) .. "\" has been deleted")
+                return msg:reply("the tag \"" .. msg.channel:escape_text(args.tag) .. "\" has been deleted"):await()
             end,
         }),
         bot.sub_command("edit", {
@@ -127,12 +127,12 @@ bot.add_command("tag", {
                 local tag = tags.find_tag(msg.channel.server, args.tag):await()
 
                 if not tag then
-                    return msg:reply("error: unknown tag")
+                    return msg:reply("error: unknown tag"):await()
                 end
 
                 if not args.force or not bot.has_role_or_higher("admin", msg.author.role) then
                     if tag.uid ~= msg.author.uid then
-                        return msg:reply("error: access denied")
+                        return msg:reply("error: access denied"):await()
                     end
                 end
 
@@ -148,7 +148,7 @@ bot.add_command("tag", {
 
                 tag:edit(value):await()
 
-                msg:reply("the tag \"" .. msg.channel:escape_text(args.tag) .. "\" has been edited")
+                return msg:reply("the tag \"" .. msg.channel:escape_text(args.tag) .. "\" has been edited"):await()
             end,
         }),
         bot.sub_command("list", {
@@ -179,31 +179,31 @@ bot.add_command("tag", {
 
                    table.sort(tag_names, function(a, b) return a < b end)
 
-                   pagination.create(msg.channel, {
-                    title = user.name .. "'s tags",
-                    data = tag_names,
-                    render_data = function(ctx, tag_names)
-                        local content = ""
+                   return pagination.create(msg.channel, {
+                        title = user.name .. "'s tags",
+                        data = tag_names,
+                        render_data = function(ctx, tag_names)
+                            local content = ""
 
-                        local i = ctx.offset
-        
-                        for _,name in pairs(tag_names) do
-                            if content ~= "" then content = content .. "\n" end
-        
-                            content = content .. i .. ". \"" .. name .. "\""
+                            local i = ctx.offset
+            
+                            for _,name in pairs(tag_names) do
+                                if content ~= "" then content = content .. "\n" end
+            
+                                content = content .. i .. ". \"" .. name .. "\""
 
-                            i = i + 1
-                        end
-        
-                        return {
-                            content = content
-                        }
-                    end,
-                    page = args.page,
-                    caller = msg.author
-                })
+                                i = i + 1
+                            end
+            
+                            return {
+                                content = content
+                            }
+                        end,
+                        page = args.page,
+                        caller = msg.author
+                    })
                 else
-                    msg:reply("error: no user found for \""..msg.channel:escape_text(args.user).."\"")
+                    return msg:reply("error: no user found for \""..msg.channel:escape_text(args.user).."\""):await()
                 end
             end,
         }),
@@ -221,9 +221,9 @@ bot.add_command("tag", {
                 local tag = tags.find_tag(msg.channel.server, args.tag):await()
 
                 if tag then
-                    msg:reply(msg.channel:escape_text(tag.value))
+                    return msg:reply(msg.channel:escape_text(tag.value)):await()
                 else
-                    msg:reply("error: unknown tag")
+                    return msg:reply("error: unknown tag"):await()
                 end
             end,
         }),
@@ -243,9 +243,9 @@ bot.add_command("tag", {
                 if tag then
                     local owner = bot.get_user(tag.uid):await()
 
-                    msg:reply(msg.channel:escape_text(owner.name) .. " is the owner of the tag \"" .. msg.channel:escape_text(args.tag) .. "\"")
+                    return msg:reply(msg.channel:escape_text(owner.name) .. " is the owner of the tag \"" .. msg.channel:escape_text(args.tag) .. "\""):await()
                 else
-                    msg:reply("error: unknown tag")
+                    return msg:reply("error: unknown tag"):await()
                 end
             end,
         }),
@@ -269,29 +269,29 @@ bot.add_command("tag", {
                 local tag = tags.find_tag(msg.channel.server, args.tag):await()
 
                 if not tag then
-                    return msg:reply("error: unknown tag")
+                    return msg:reply("error: unknown tag"):await()
                 end
 
                 if tag.uid ~= msg.author.uid then
-                    return msg:reply("error: access denied")
+                    return msg:reply("error: access denied"):await()
                 end
 
                 if args.user then
                     local user = bot.find_user(msg.channel, args.user):await()
 
                     if user.uid == msg.author.uid then
-                        return msg:reply("error: you cannot transfer to yourself")
+                        return msg:reply("error: you cannot transfer to yourself"):await()
                     end
 
                     if user then
                         tag:set_transfer_user(user):await()
-                        msg:reply(msg.channel:escape_text(user.name) .. " can now do \"tag accept "..msg.channel:escape_text(args.tag).."\" to accept the tag transfer")
+                        return msg:reply(msg.channel:escape_text(user.name) .. " can now do \"tag accept "..msg.channel:escape_text(args.tag).."\" to accept the tag transfer"):await()
                     else
-                        msg:reply("error: no user found for \""..msg.channel:escape_text(args.user).."\"")
+                        return msg:reply("error: no user found for \""..msg.channel:escape_text(args.user).."\""):await()
                     end
                 else
                     tag:set_transfer_user(nil):await()
-                    msg:reply("removed transfer state from \""..msg.channel:escape_text(args.tag).."\"")
+                    return msg:reply("removed transfer state from \""..msg.channel:escape_text(args.tag).."\""):await()
                 end
             end,
         }),
@@ -313,13 +313,13 @@ bot.add_command("tag", {
                 end
 
                 if tag.transfer_uid ~= msg.author.uid then
-                    return msg:reply("error: the tag is not being transfered to you")
+                    return msg:reply("error: the tag is not being transfered to you"):await()
                 end
 
                 tag:set_transfer_user(nil):await()
                 tag:set_owner(msg.author):await()
 
-                msg:reply("the tag \""..msg.channel:escape_text(args.tag).."\" is now yours")
+                return msg:reply("the tag \""..msg.channel:escape_text(args.tag).."\" is now yours"):await()
             end,
         }),
     }

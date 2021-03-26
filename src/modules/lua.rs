@@ -129,7 +129,7 @@ impl Module for LuaModule {
         match content.strip_prefix(&prefix) {
             Some(rest) => {
                 let text = rest.to_string();
-                return self.on_command(msg, text).await;
+                return self.on_command(msg, text, false).await;
             }
             None => {}
         };
@@ -169,6 +169,51 @@ impl Module for LuaModule {
         }
     }
 
+    async fn message_update(
+        &self,
+        msg: Arc<dyn Message<impl Service>>,
+        _old_msg: Option<Arc<dyn Message<impl Service>>>,
+    ) -> Result<()> {
+        // Ignore the bot
+        if msg.author().id() == msg.service().current_user().await?.id()
+            || msg.author().bot() == Some(true)
+        {
+            return Ok(());
+        }
+
+        let user = self
+            .bot
+            .db()
+            .get_user_from_service_user_id(msg.author().id())
+            .await?;
+
+        if self.bot.db().is_restricted(user.uid).await? {
+            return Ok(());
+        }
+
+        // Get the channel and server
+        let channel = msg.channel().await?;
+        let server = channel.server().await?;
+
+        // Find the command prefix for the channel
+        let prefix = self
+            .settings
+            .prefix
+            .value(server.id(), channel.id())
+            .await?;
+
+        let content = msg.content();
+
+        // Check for command prefix
+        match content.strip_prefix(&prefix) {
+            Some(rest) => {
+                let text = rest.to_string();
+                self.on_command(msg, text, true).await
+            }
+            None => Ok(()),
+        }
+    }
+
     async fn reaction(
         &self,
         msg: Arc<dyn Message<impl Service>>,
@@ -197,7 +242,12 @@ impl Module for LuaModule {
 }
 
 impl LuaModule {
-    async fn on_command(&self, msg: Arc<dyn Message<impl Service>>, rest: String) -> Result<()> {
+    async fn on_command(
+        &self,
+        msg: Arc<dyn Message<impl Service>>,
+        rest: String,
+        edited: bool,
+    ) -> Result<()> {
         let args = parse_shell_args(
             msg.service()
                 .kind()
@@ -209,7 +259,7 @@ impl LuaModule {
         let sender = lua_state.async_sender();
         let bot_msg = BotMessage::from_msg(self.bot.clone(), sender, &msg).await?;
 
-        let res = lua_state.run_bot_command(bot_msg, args);
+        let res = lua_state.run_bot_command(bot_msg, args, edited);
         drop(lua_state);
 
         if let Err(err) = res {

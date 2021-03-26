@@ -68,11 +68,11 @@ bot.add_command("settings", {
             description = "Update a module setting",
             callback = function(msg, args)
                 if not (args.server or args.channel) then
-                    return msg:reply("argument error: --channel or --server has to be used")
+                    return msg:reply("argument error: --channel or --server has to be used"):await()
                 end
 
                 if args.server and args.channel then
-                    return msg:reply("argument error: only one of --channel or --server can be used")
+                    return msg:reply("argument error: only one of --channel or --server can be used"):await()
                 end
 
                 local server = args.server ~= nil
@@ -80,14 +80,12 @@ bot.add_command("settings", {
                 local err, fut = bot.set_setting(msg, server, args.module, args.setting, args.value)
 
                 if err then
-                    return msg:reply("argument error: " .. err)
+                    return msg:reply("argument error: " .. err):await()
                 end
 
-                fut:thence(function()
-                    msg:reply("Successfully updated \"" .. args.module .. "/" .. args.setting .. "\" for the current " .. (server and "server" or "channel"))
-                end):catch(function(err)
-                    msg:reply(err)
-                end)
+                fut:await()
+
+                return msg:reply("Successfully updated \"" .. args.module .. "/" .. args.setting .. "\" for the current " .. (server and "server" or "channel")):await()
             end,
         })
     },

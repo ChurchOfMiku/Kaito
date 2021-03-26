@@ -12,12 +12,12 @@ bot.add_command("markov", {
     },
     callback = function(msg, args, extra_args)
         if running >= 6 then
-            return msg:reply("current running markov operations limit reached")
+            return msg:reply("current running markov operations limit reached"):await()
         end
 
         running = running + 1
 
-        local status, err = pcall(function()
+        local succ, res = pcall(function()
             local input = (args.input or "")
 
             if #extra_args > 0 then
@@ -47,12 +47,16 @@ bot.add_command("markov", {
                     reply = msg.channel:send(msg.channel:escape_text(body.body)):await()
                 end
             end
+
+            return reply
         end)
 
         running = math.max(running - 1, 0)
 
-        if err then
-            error(err)
+        if succ then
+            return succ
+        else
+            error(res)
         end
     end,
 })

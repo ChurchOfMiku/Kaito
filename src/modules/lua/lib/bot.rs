@@ -542,27 +542,39 @@ impl BotMessage {
 
 impl UserData for BotMessage {
     fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
-        methods.add_method("reply", |_state, msg, content: String| {
+        methods.add_method("reply", |state, msg, content: String| {
+            let bot = msg.0.bot.clone();
             let ctx = msg.0.bot.get_ctx();
+            let sender = msg.0.sender.clone();
             let channel_id = msg.0.channel.id();
             let author_id = msg.0.author.id();
 
-            tokio::spawn(async move {
-                ctx.services()
-                    .clone()
-                    .send_message(
-                        channel_id,
-                        content,
-                        MessageSettings {
-                            reply_user: Some(author_id),
-                            ..MessageSettings::default()
-                        },
-                    )
-                    .await
-                    .ok();
-            });
+            let fut = create_lua_future!(
+                state,
+                msg.0.sender,
+                (),
+                async move {
+                    match ctx
+                        .services()
+                        .clone()
+                        .send_message(
+                            channel_id,
+                            content,
+                            MessageSettings {
+                                reply_user: Some(author_id),
+                                ..MessageSettings::default()
+                            },
+                        )
+                        .await
+                    {
+                        Ok(msg) => BotMessage::from_msg(bot, sender, &msg).await,
+                        Err(err) => Err(err),
+                    }
+                },
+                |_state, _data: (), res: Result<BotMessage>| { Ok(res?) }
+            );
 
-            Ok(())
+            Ok(fut)
         });
 
         methods.add_method("react", |state, msg, reaction: String| {

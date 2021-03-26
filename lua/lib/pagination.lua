@@ -69,4 +69,6 @@ function pagination.create(channel, options)
 
         bot.reaction_hooks[msg.id] = nil
     end
+
+    return msg
 end

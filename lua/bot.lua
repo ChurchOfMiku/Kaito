@@ -1,5 +1,6 @@
 bot = bot or {}
 bot.cmds = bot.cmds or {}
+bot.cache = bot.cache or {messages = {}}
 bot.aliases = bot.aliases or {}
 bot.reaction_hooks = {}
 
@@ -330,7 +331,7 @@ local function exec_command(msg, cmd, args)
     cmd.callback(msg, res, extra_args)
 end
 
-function bot.on_command(msg, args)
+function bot.on_command(msg, args, edited)
     local cmd_name = args[1]
     local args = {table.unpack(args, 2, #args)}
 
@@ -345,6 +346,13 @@ end
 
 function bot.on_message(msg)
     hooks.call("message", msg)
+
+    local channel_buffer  = bot.cache.messages[msg.channel_id]
+    if not bot.cache.messages[msg.channel_id] then
+        channel_buffer = RingBuffer(12)
+        bot.cache.messages[msg.channel.id] = channel_buffer
+    end
+    channel_buffer:push(msg)
 end
 
 function bot.on_reaction(msg, reactor, reaction, removed)

@@ -19,9 +19,9 @@ bot.add_command("setrole", {
 
         if user then
             bot.set_role(user, args.role):await()
-            msg:reply("changed role of " .. user.name .. " to "..args.role)
+            return msg:reply("changed role of " .. user.name .. " to "..args.role):await()
         else
-            msg:reply("error: no user was found")
+            return msg:reply("error: no user was found"):await()
         end
     end,
     role = "root",

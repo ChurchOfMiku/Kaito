@@ -38,6 +38,16 @@ macro_rules! modules_loader {
                 )+
             }
 
+            pub async fn message_update(&self, msg: Arc<dyn Message<impl Service>>, old_msg: Option<Arc<dyn Message<impl Service>>>) {
+                $(
+                    if self.$module_ident.is_enabled() {
+                        if let Err(err) = self.$module_ident.module().message_update(msg.clone(), old_msg.clone()).await {
+                            println!("error during executing module {}: {}", self.$module_ident.module().name(), err.to_string())
+                        };
+                    }
+                )+
+            }
+
             #[allow(dead_code)]
             pub async fn reaction(&self, msg: Arc<dyn Message<impl Service>>, reactor: Arc<dyn User<impl Service>>, reaction: String, remove: bool) {
                 $(
@@ -98,6 +108,11 @@ pub trait Module: 'static + Send + Sync + Sized {
 
     // TODO: Move message to type alias when impl's inside type aliases becomes stable
     async fn message(&self, msg: Arc<dyn Message<impl Service>>) -> Result<()>;
+    async fn message_update(
+        &self,
+        msg: Arc<dyn Message<impl Service>>,
+        old_msg: Option<Arc<dyn Message<impl Service>>>,
+    ) -> Result<()>;
     async fn reaction(
         &self,
         msg: Arc<dyn Message<impl Service>>,
