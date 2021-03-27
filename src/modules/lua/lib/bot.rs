@@ -875,6 +875,14 @@ impl UserData for BotMessage {
                 _ => Ok(mlua::Value::Nil),
             }
         });
+
+        methods.add_meta_method(MetaMethod::ToString, |state, msg, (): ()| {
+            state.create_string(&format!(
+                "Message {{ id = \"{}\", content = \"{}\" }}",
+                msg.0.id.to_str(),
+                msg.0.content
+            ))
+        });
     }
 }
 
@@ -904,6 +912,13 @@ impl UserData for BotMessageAttachment {
                 }),
                 _ => Ok(mlua::Value::Nil),
             }
+        });
+
+        methods.add_meta_method(MetaMethod::ToString, |state, a, (): ()| {
+            state.create_string(&format!(
+                "Attachment {{ filename = \"{}\", url = \"{}\"}}",
+                a.0.filename, a.0.url
+            ))
         });
     }
 }
@@ -971,6 +986,15 @@ impl UserData for BotUser {
                 _ => Ok(mlua::Value::Nil),
             },
         );
+
+        methods.add_meta_method(MetaMethod::ToString, |state, user, (): ()| {
+            state.create_string(&format!(
+                "User {{ name = \"{}\", id = \"{}\", uid = {} }}",
+                user.0.name,
+                user.0.id.to_str(),
+                user.1.uid
+            ))
+        });
     }
 }
 
@@ -1091,6 +1115,10 @@ impl UserData for BotChannel {
                 _ => Ok(mlua::Value::Nil),
             },
         );
+
+        methods.add_meta_method(MetaMethod::ToString, |state, chan, (): ()| {
+            state.create_string(&format!("Channel {{ id = \"{}\" }}", chan.0.id.to_str()))
+        });
     }
 }
 
@@ -1115,12 +1143,16 @@ impl UserData for BotServer {
     fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
         methods.add_meta_method(
             MetaMethod::Index,
-            |state, user, index: String| match index.as_str() {
+            |state, server, index: String| match index.as_str() {
                 "id" => Ok(mlua::Value::String(
-                    state.create_string(&user.0.id.to_short_str())?,
+                    state.create_string(&server.0.id.to_short_str())?,
                 )),
                 _ => Ok(mlua::Value::Nil),
             },
         );
+
+        methods.add_meta_method(MetaMethod::ToString, |state, server, (): ()| {
+            state.create_string(&format!("Server {{ id = \"{}\" }}", server.0.id.to_str()))
+        });
     }
 }
