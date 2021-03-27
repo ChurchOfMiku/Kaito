@@ -6,10 +6,11 @@ sandbox.env.base_env = {
         clock = os.clock,
         time = os.time
     },
-    async = sandbox.utils.deepcopy(async),
-    math = sandbox.utils.deepcopy(math),
-    string = sandbox.utils.deepcopy(string),
-    table = sandbox.utils.deepcopy(table),
+    async = async,
+    bot = bot,
+    math = math,
+    string = string,
+    table = table,
     -- Tables
     setmetatable = setmetatable,
     getmetatable = getmetatable,
@@ -28,7 +29,11 @@ function sandbox.env.get_env()
     local env = sandbox.env.env or {}
 
     for k,v in pairs(sandbox.env.base_env) do
-        env[k] = v
+        if type(v) == "table" then
+            env[k] = sandbox.utils.deepcopy(v)
+        else
+            env[k] = v
+        end
     end
 
     env._G = env

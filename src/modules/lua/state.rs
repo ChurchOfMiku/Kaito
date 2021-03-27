@@ -20,7 +20,7 @@ use std::sync::{
 use super::{
     http,
     lib::{
-        bot::{lib_bot, BotMessage, BotUser},
+        bot::{bot_flags, lib_bot, BotMessage, BotUser},
         include_lua, lib_include,
         os::lib_os,
         r#async::lib_async,
@@ -123,6 +123,9 @@ impl LuaState {
         lib_include(lua_root_path.clone(), &inner)?;
 
         if sandbox {
+            let bot_tbl = inner.create_table()?;
+            bot_flags(&inner, &bot_tbl)?;
+            inner.globals().set("bot", bot_tbl)?;
             include_lua(&inner, &lua_root_path, "sandbox.lua")?;
         } else {
             lib_bot(
