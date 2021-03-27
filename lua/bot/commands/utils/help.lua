@@ -7,12 +7,12 @@ bot.add_command("help", {
             description = "Optional page number",
         },
     },
-    callback = function(msg, args)
+    callback = function(ctx)
         local cmds = {}
 
         for _,cmd in pairs(bot.cmds) do
             if cmd.role then
-                if bot.has_role_or_higher(cmd.role, msg.author.role) then
+                if bot.has_role_or_higher(cmd.role, ctx.msg.author.role) then
                     table.insert(cmds, cmd)
                 end
             else
@@ -22,8 +22,8 @@ bot.add_command("help", {
 
         table.sort(cmds, function(a, b) return a.cmd < b.cmd end)
 
-        return pagination.create(msg.channel, {
-            title = (msg.service == "discord" and "<:kaito:818824729510936576> " or "") .. "Help",
+        return pagination.create(ctx.msg.channel, {
+            title = (ctx.msg.service == "discord" and "<:kaito:818824729510936576> " or "") .. "Help",
             data = cmds,
             render_data = function(ctx, cmds)
                 local content = ""
@@ -51,8 +51,8 @@ bot.add_command("help", {
                     }
                 end
             },
-            page = args.page,
-            caller = msg.author
+            page = ctx.args.page,
+            caller = ctx.msg.author
         })
     end,
 })

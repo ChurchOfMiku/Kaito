@@ -9,16 +9,16 @@ bot.add_command("gpt", {
             required = true,
         }
     },
-    callback = function(msg, args, extra_args)
-        local input = (args.input or "")
+    callback = function(ctx)
+        local input = (ctx.args.input or "")
 
-        if #extra_args > 0 then
-            input = input .. " " .. table.concat(extra_args, " ")
+        if #ctx.extra_args > 0 then
+            input = input .. " " .. table.concat(ctx.extra_args, " ")
         end
 
-        msg.channel:send_typing()
+        ctx.msg.channel:send_typing()
 
         local res = http.fetch("http://127.0.0.1:3000/gpt", { body = input }):await()
-        return msg:reply(msg.channel:escape_text(res.body)):await()
+        return ctx.msg:reply(ctx.msg.channel:escape_text(res.body)):await()
     end,
 })

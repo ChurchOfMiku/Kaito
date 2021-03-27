@@ -15,19 +15,19 @@ bot.add_command("undo", {
             description = "User to undo commands for (admin)",
         },
     },
-    callback = function(msg, args)
-        local amount = tonumber(args.amount)
+    callback = function(ctx)
+        local amount = tonumber(ctx.args.amount)
         local has_amount = amount ~= nil
         amount = math.max(amount or 1, 1)
 
-        local admin = bot.has_role_or_higher("admin", msg.author.role)
-        local user_arg = args.user or not has_amount and args.amount
+        local admin = bot.has_role_or_higher("admin", ctx.msg.author.role)
+        local user_arg = ctx.args.user or not has_amount and ctx.args.amount
 
         if user_arg and not admin then
-            return msg:reply("error: only admins can undo messages for other users"):await()
+            return ctx.msg:reply("error: only admins can undo messages for other users"):await()
         end
 
-        local user = user_arg and bot.find_user(msg.channel, user_arg):await()
+        local user = user_arg and bot.find_user(ctx.msg.channel, user_arg):await()
 
         if admin then
             amount = math.min(amount, MAX_UNDO_ADMIN)
@@ -35,7 +35,7 @@ bot.add_command("undo", {
             amount = math.min(amount, MAX_UNDO)
         end
         
-        local channel_buffer = bot.cache.messages[msg.channel.id]
+        local channel_buffer = bot.cache.messages[ctx.msg.channel.id]
 
         local count = 0
 
@@ -54,7 +54,7 @@ bot.add_command("undo", {
                             count = count + 1
                         end
                     end
-                elseif msg.author.uid == old_msg.author.uid then
+                elseif ctx.msg.author.uid == old_msg.author.uid then
                     if command and bot.delete_reply(command) then
                         count = count + 1
                     end
@@ -71,9 +71,9 @@ bot.add_command("undo", {
         end
 
         if count > 0 then
-            return msg:reply("successfully deleted " .. count .. " commands"):await()
+            return ctx.msg:reply("successfully deleted " .. count .. " commands"):await()
         else
-            return msg:reply("could not find any commands to undo"):await()
+            return ctx.msg:reply("could not find any commands to undo"):await()
         end
     end,
 })

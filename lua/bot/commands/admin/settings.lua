@@ -11,11 +11,11 @@ bot.add_command("settings", {
                 },
             },
             description = "List the settings for the module",
-            callback = function(msg, args)
-                local module_settings = bot.list_settings(args.module)
+            callback = function(ctx)
+                local module_settings = bot.list_settings(ctx.args.module)
 
                 if not module_settings then
-                    return msg:reply("unknown module")
+                    return ctx.msg:reply("unknown module")
                 end
 
                 local out = "Module settings:\n"
@@ -28,10 +28,10 @@ bot.add_command("settings", {
                 local pad = min_len + 3
                 for _, v in ipairs(module_settings) do
                     out =
-                        out .. "   " .. bot.icode_block(msg.channel, v.name .. string.rep(" ", pad - #v.name) .. v.help) .. "\n"
+                        out .. "   " .. bot.icode_block(ctx.msg.channel, v.name .. string.rep(" ", pad - #v.name) .. v.help) .. "\n"
                 end
 
-                msg:reply(out)
+                ctx.msg:reply(out)
             end,
         }),
         bot.sub_command("set", {
@@ -66,26 +66,26 @@ bot.add_command("settings", {
                 }
             },
             description = "Update a module setting",
-            callback = function(msg, args)
-                if not (args.server or args.channel) then
-                    return msg:reply("argument error: --channel or --server has to be used"):await()
+            callback = function(ctx)
+                if not (ctx.args.server or ctx.args.channel) then
+                    return ctx.msg:reply("argument error: --channel or --server has to be used"):await()
                 end
 
-                if args.server and args.channel then
-                    return msg:reply("argument error: only one of --channel or --server can be used"):await()
+                if ctx.args.server and ctx.args.channel then
+                    return ctx.msg:reply("argument error: only one of --channel or --server can be used"):await()
                 end
 
-                local server = args.server ~= nil
+                local server = ctx.args.server ~= nil
 
-                local err, fut = bot.set_setting(msg, server, args.module, args.setting, args.value)
+                local err, fut = bot.set_setting(ctx.msg, server, ctx.args.module, ctx.args.setting, ctx.args.value)
 
                 if err then
-                    return msg:reply("argument error: " .. err):await()
+                    return ctx.msg:reply("argument error: " .. err):await()
                 end
 
                 fut:await()
 
-                return msg:reply("Successfully updated \"" .. args.module .. "/" .. args.setting .. "\" for the current " .. (server and "server" or "channel")):await()
+                return ctx.msg:reply("Successfully updated \"" .. ctx.args.module .. "/" .. ctx.args.setting .. "\" for the current " .. (server and "server" or "channel")):await()
             end,
         })
     },

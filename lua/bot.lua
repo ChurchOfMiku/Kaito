@@ -333,7 +333,11 @@ local function exec_command(msg, cmd, args)
         return msg:reply("argument error: " .. res .. '\nUse "' .. get_abs_cmd(cmd) .. ' --help" for more info.'):await()
     end
 
-    return cmd.callback(msg, res, extra_args)
+    return cmd.callback({
+        msg = msg,
+        args = res,
+        extra_args = extra_args
+    })
 end
 
 function bot.on_command(msg, args, edited)
@@ -363,11 +367,11 @@ function bot.on_command(msg, args, edited)
     end
 
     local reply = exec_command(msg, cmd, args)
-    bot.add_command_history(msg, reply)
+    bot.add_command_history(msg, reply, count)
 end
 
-function bot.add_command_history(msg, reply)
-    bot.cache.commands:set(msg.id, {reply = type(reply) == "userdata" and reply, id = msg.id, count = count, uid = msg.author.uid})
+function bot.add_command_history(msg, reply, count)
+    bot.cache.commands:set(msg.id, {reply = type(reply) == "userdata" and reply, id = msg.id, count = count or 0, uid = msg.author.uid})
 end
 
 function bot.on_message(msg)

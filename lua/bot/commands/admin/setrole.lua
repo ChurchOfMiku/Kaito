@@ -14,14 +14,14 @@ bot.add_command("setrole", {
             required = true,
         }
     },
-    callback = function(msg, args)
-        local user = bot.find_user(msg.channel, args.user):await()
+    callback = function(ctx)
+        local user = bot.find_user(ctx.msg.channel, ctx.args.user):await()
 
         if user then
-            bot.set_role(user, args.role):await()
-            return msg:reply("changed role of " .. user.name .. " to "..args.role):await()
+            bot.set_role(user, ctx.args.role):await()
+            return ctx.msg:reply("changed role of " .. user.name .. " to "..ctx.args.role):await()
         else
-            return msg:reply("error: no user was found"):await()
+            return ctx.msg:reply("error: no user was found"):await()
         end
     end,
     role = "root",

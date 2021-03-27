@@ -10,21 +10,21 @@ bot.add_command("markov", {
             description = "Input for start of sentence",
         }
     },
-    callback = function(msg, args, extra_args)
+    callback = function(ctx)
         if running >= 6 then
-            return msg:reply("current running markov operations limit reached"):await()
+            return ctx.msg:reply("current running markov operations limit reached"):await()
         end
 
         running = running + 1
 
         local succ, res = pcall(function()
-            local input = (args.input or "")
+            local input = (ctx.args.input or "")
 
-            if #extra_args > 0 then
-                input = input .. " " .. table.concat(extra_args, " ")
+            if #ctx.extra_args > 0 then
+                input = input .. " " .. table.concat(ctx.extra_args, " ")
             end
     
-            msg.channel:send_typing()
+            ctx.msg.channel:send_typing()
     
             local res = http.fetch("http://127.0.0.1:3000/markov", { body = input, stream = true }):await()
             local reply
@@ -34,7 +34,7 @@ bot.add_command("markov", {
                 body = body.next_body:await()
     
                 if not body then
-                    if reply and msg.channel:supports_feature(bot.FEATURES.React) then
+                    if reply and ctx.msg.channel:supports_feature(bot.FEATURES.React) then
                         reply:react("✅")
                     end
 
@@ -42,10 +42,10 @@ bot.add_command("markov", {
                 end
     
                 if reply then
-                    reply:edit(msg.channel:escape_text(body.body)):await()
+                    reply:edit(ctx.msg.channel:escape_text(body.body)):await()
                 else
-                    reply = msg.channel:send(msg.channel:escape_text(body.body)):await()
-                    bot.add_command_history(msg, reply)
+                    reply = ctx.msg.channel:send(ctx.msg.channel:escape_text(body.body)):await()
+                    bot.add_command_history(ctx.msg, reply)
                 end
             end
 
