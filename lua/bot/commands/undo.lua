@@ -46,8 +46,7 @@ bot.add_command("undo", {
 
                 if user then
                     if old_msg.author.uid == user.uid then
-                        if command then
-                            bot.delete_reply(command)
+                        if command and bot.delete_reply(command) then
                             count = count + 1
                         end
 
@@ -56,8 +55,7 @@ bot.add_command("undo", {
                         end
                     end
                 elseif msg.author.uid == old_msg.author.uid then
-                    if command then
-                        bot.delete_reply(command)
+                    if command and bot.delete_reply(command) then
                         count = count + 1
                     end
 

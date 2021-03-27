@@ -363,7 +363,11 @@ function bot.on_command(msg, args, edited)
     end
 
     local reply = exec_command(msg, cmd, args)
-    bot.cache.commands:set(msg.id, {reply = reply, count = count, uid = msg.author.uid})
+    bot.add_command_history(msg, reply)
+end
+
+function bot.add_command_history(msg, reply)
+    bot.cache.commands:set(msg.id, {reply = type(reply) == "userdata" and reply, id = msg.id, count = count, uid = msg.author.uid})
 end
 
 function bot.on_message(msg)
@@ -380,8 +384,12 @@ end
 function bot.delete_reply(entry)
     if entry.reply and entry.reply.delete then
         if entry.reply.channel:supports_feature(bot.FEATURES.Edit) then
-            entry.reply:delete()
-            bot.cache.commands:delete(entry.reply.id)
+            local succ = pcall(function()
+                entry.reply:delete():await()
+            end)
+            bot.cache.commands:delete(entry.id)
+
+            return succ
         end
     end
 end

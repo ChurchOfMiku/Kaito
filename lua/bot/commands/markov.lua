@@ -38,13 +38,14 @@ bot.add_command("markov", {
                         reply:react("✅")
                     end
 
-                    return
+                    return reply
                 end
     
                 if reply then
-                    reply:edit(msg.channel:escape_text(body.body))
+                    reply:edit(msg.channel:escape_text(body.body)):await()
                 else
                     reply = msg.channel:send(msg.channel:escape_text(body.body)):await()
+                    bot.add_command_history(msg, reply)
                 end
             end
 
@@ -54,8 +55,9 @@ bot.add_command("markov", {
         running = math.max(running - 1, 0)
 
         if succ then
-            return succ
-        else
+            return res
+        -- Throw the error if it was not due to the message being deleted
+        elseif string.match(res, "Unknown Message") then
             error(res)
         end
     end,
