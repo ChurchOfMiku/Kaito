@@ -265,7 +265,7 @@ impl LuaState {
                 characters_left: AtomicU64::new(2000),
                 http_calls_left: AtomicU64::new(2),
                 messages_left: AtomicU64::new(2),
-                message_edits_left: AtomicU64::new(2),
+                message_edits_left: AtomicU64::new(5),
                 message_reacts_left: AtomicU64::new(10),
                 message_deletions_left: AtomicU64::new(2),
                 instructions: 262144,
