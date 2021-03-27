@@ -1,5 +1,6 @@
 use anyhow::Result;
 use async_mutex::Mutex;
+use chrono::{NaiveDateTime, Utc};
 use crossbeam::channel::{Sender, TryRecvError};
 use futures::TryFutureExt;
 use mlua::{prelude::*, Error as LuaError, Lua, MetaMethod, Table, UserData, UserDataMethods};
@@ -17,7 +18,7 @@ use crate::{
         db::{Uid, User as DbUser},
         Bot, ROLES,
     },
-    message::{Attachment, MessageSettings},
+    message::{Attachment, MessageEmbed, MessageSettings},
     services::{
         Channel, ChannelId, Message, MessageId, Server, ServerId, Service, ServiceFeatures,
         ServiceKind, Services, User, UserId,
@@ -25,6 +26,96 @@ use crate::{
     settings::SettingContext,
     utils::escape_untrusted_text,
 };
+
+fn table_to_embed(tbl: LuaTable) -> Result<MessageEmbed> {
+    let mut embed = MessageEmbed::default();
+
+    if let Ok(author_tbl) = tbl.get::<&str, LuaTable>("author") {
+        if let Ok(author_name) = author_tbl.get("name") {
+            embed.author_name = Some(author_name);
+
+            if let Ok(icon_url) = author_tbl.get("icon_url") {
+                embed.author_icon_url = Some(icon_url);
+            }
+
+            if let Ok(url) = author_tbl.get("url") {
+                embed.author_url = Some(url);
+            }
+        }
+    }
+
+    if let Ok(color) = tbl.get("color") {
+        embed.color = Some(color);
+    }
+
+    if let Ok(description) = tbl.get("description") {
+        embed.description = Some(description);
+    }
+
+    if let Ok(fields) = tbl.get::<&str, LuaTable>("fields") {
+        for res in fields.pairs::<i64, LuaTable>() {
+            if let Ok((_, field)) = res {
+                if let (Ok(name), Ok(value)) = (field.get("name"), field.get("value")) {
+                    let inline = field.get("inline").ok().unwrap_or(false);
+
+                    embed.fields.push((name, value, inline));
+                }
+            }
+        }
+    }
+
+    if let Ok(footer_text) = tbl.get("footer_text") {
+        embed.footer_text = Some(footer_text);
+    }
+
+    if let Ok(footer_icon_url) = tbl.get("footer_icon_url") {
+        embed.footer_icon_url = Some(footer_icon_url);
+    }
+
+    if let Ok(image) = tbl.get("image") {
+        embed.image = Some(image);
+    }
+
+    if let Ok(thumbnail) = tbl.get("thumbnail") {
+        embed.thumbnail = Some(thumbnail);
+    }
+
+    if let Ok(timestamp) = tbl.get::<&str, String>("timestamp") {
+        let dt = NaiveDateTime::parse_from_str(&timestamp, "%Y-%m-%dT%H:%M:%S%z")?;
+        embed.timestamp = Some(chrono::DateTime::<Utc>::from_utc(dt, Utc));
+    }
+
+    if let Ok(title) = tbl.get("title") {
+        embed.title = Some(title);
+    }
+
+    if let Ok(attachment) = tbl.get("attachment") {
+        embed.attachment = Some(attachment);
+    }
+
+    Ok(embed)
+}
+
+fn message_settings_from_table(settings_tbl: LuaTable) -> Result<MessageSettings, LuaError> {
+    let mut settings = MessageSettings::default();
+
+    if let Ok(embed_tbl) = settings_tbl.get("embed") {
+        settings.embed =
+            Some(table_to_embed(embed_tbl).map_err(|e| LuaError::RuntimeError(e.to_string()))?);
+    }
+
+    if let Ok(attachments) = settings_tbl.get::<&str, LuaTable>("attachments") {
+        for res in attachments.pairs::<i64, LuaTable>() {
+            if let Ok((_, field)) = res {
+                if let (Ok(filename), Ok(data)) = (field.get("filename"), field.get("data")) {
+                    settings.attachments.push((filename, data));
+                }
+            }
+        }
+    }
+
+    Ok(settings)
+}
 
 pub fn bot_flags(state: &Lua, bot_tbl: &LuaTable) -> Result<()> {
     bot_tbl.set("ROLES", ROLES)?;
@@ -615,48 +706,57 @@ impl BotMessage {
 
 impl UserData for BotMessage {
     fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
-        methods.add_method("reply", |state, msg, content: String| {
-            if let Some(sandbox_state) = get_sandbox_state(state) {
-                if sandbox_state.limits().messages_left_limit() {
-                    return Err(LuaError::RuntimeError(
-                        "sandbox message sending limit reached".into(),
-                    ));
-                }
-            }
-
-            let bot = msg.0.bot.clone();
-            let ctx = msg.0.bot.get_ctx();
-            let sender = msg.0.sender.clone();
-            let channel_id = msg.0.channel.id();
-            let author_id = msg.0.author.id();
-
-            let fut = create_lua_future!(
-                state,
-                msg.0.sender,
-                (),
-                async move {
-                    match ctx
-                        .services()
-                        .clone()
-                        .send_message(
-                            channel_id,
-                            content,
-                            MessageSettings {
-                                reply_user: Some(author_id),
-                                ..MessageSettings::default()
-                            },
-                        )
-                        .await
-                    {
-                        Ok(msg) => BotMessage::from_msg(bot, sender, &msg).await,
-                        Err(err) => Err(err),
+        methods.add_method(
+            "reply",
+            |state, msg, (content, settings): (String, Option<LuaTable>)| {
+                if let Some(sandbox_state) = get_sandbox_state(state) {
+                    if sandbox_state.limits().messages_left_limit() {
+                        return Err(LuaError::RuntimeError(
+                            "sandbox message sending limit reached".into(),
+                        ));
                     }
-                },
-                |_state, _data: (), res: Result<BotMessage>| { Ok(res?) }
-            );
+                }
 
-            Ok(fut)
-        });
+                let message_settings = if let Some(settings) = settings {
+                    message_settings_from_table(settings)?
+                } else {
+                    MessageSettings::default()
+                };
+
+                let bot = msg.0.bot.clone();
+                let ctx = msg.0.bot.get_ctx();
+                let sender = msg.0.sender.clone();
+                let channel_id = msg.0.channel.id();
+                let author_id = msg.0.author.id();
+
+                let fut = create_lua_future!(
+                    state,
+                    msg.0.sender,
+                    (),
+                    async move {
+                        match ctx
+                            .services()
+                            .clone()
+                            .send_message(
+                                channel_id,
+                                content,
+                                MessageSettings {
+                                    reply_user: Some(author_id),
+                                    ..message_settings
+                                },
+                            )
+                            .await
+                        {
+                            Ok(msg) => BotMessage::from_msg(bot, sender, &msg).await,
+                            Err(err) => Err(err),
+                        }
+                    },
+                    |_state, _data: (), res: Result<BotMessage>| { Ok(res?) }
+                );
+
+                Ok(fut)
+            },
+        );
 
         methods.add_method("react", |state, msg, reaction: String| {
             if let Some(sandbox_state) = get_sandbox_state(state) {
@@ -682,29 +782,39 @@ impl UserData for BotMessage {
             Ok(fut)
         });
 
-        methods.add_method("edit", |state, msg, content: String| {
-            if let Some(sandbox_state) = get_sandbox_state(state) {
-                if sandbox_state.limits().message_edits_left_limit() {
-                    return Err(LuaError::RuntimeError(
-                        "sandbox message editing limit reached".into(),
-                    ));
+        methods.add_method(
+            "edit",
+            |state, msg, (content, settings): (String, Option<LuaTable>)| {
+                if let Some(sandbox_state) = get_sandbox_state(state) {
+                    if sandbox_state.limits().message_edits_left_limit() {
+                        return Err(LuaError::RuntimeError(
+                            "sandbox message editing limit reached".into(),
+                        ));
+                    }
                 }
-            }
 
-            let ctx = msg.0.bot.get_ctx();
-            let channel_id = msg.channel().id();
-            let msg_id = msg.0.id;
+                let ctx = msg.0.bot.get_ctx();
+                let channel_id = msg.channel().id();
+                let msg_id = msg.0.id;
 
-            let fut = create_lua_future!(
-                state,
-                msg.0.sender,
-                (),
-                ctx.services().edit_message(channel_id, msg_id, content),
-                |_state, _data: (), res: Result<()>| { Ok(res?) }
-            );
+                let message_settings = if let Some(settings) = settings {
+                    message_settings_from_table(settings)?
+                } else {
+                    MessageSettings::default()
+                };
 
-            Ok(fut)
-        });
+                let fut = create_lua_future!(
+                    state,
+                    msg.0.sender,
+                    (),
+                    ctx.services()
+                        .edit_message(channel_id, msg_id, content, message_settings),
+                    |_state, _data: (), res: Result<()>| { Ok(res?) }
+                );
+
+                Ok(fut)
+            },
+        );
 
         methods.add_method("delete", |state, msg, (): ()| {
             if let Some(sandbox_state) = get_sandbox_state(state) {
@@ -912,39 +1022,48 @@ impl UserData for BotChannel {
                 .supports_feature(ServiceFeatures::from_bits_truncate(bits)))
         });
 
-        methods.add_method("send", |state, chan, content: String| {
-            if let Some(sandbox_state) = get_sandbox_state(state) {
-                if sandbox_state.limits().messages_left_limit() {
-                    return Err(LuaError::RuntimeError(
-                        "sandbox message sending limit reached".into(),
-                    ));
-                }
-            }
-
-            let bot = chan.0.bot.clone();
-            let sender = chan.0.sender.clone();
-            let ctx = chan.0.bot.get_ctx();
-            let channel_id = chan.id();
-
-            let fut = create_lua_future!(
-                state,
-                chan.0.sender,
-                (),
-                async move {
-                    match ctx
-                        .services()
-                        .send_message(channel_id, content, MessageSettings::default())
-                        .await
-                    {
-                        Ok(msg) => BotMessage::from_msg(bot, sender, &msg).await,
-                        Err(err) => Err(err),
+        methods.add_method(
+            "send",
+            |state, chan, (content, settings): (String, Option<LuaTable>)| {
+                if let Some(sandbox_state) = get_sandbox_state(state) {
+                    if sandbox_state.limits().messages_left_limit() {
+                        return Err(LuaError::RuntimeError(
+                            "sandbox message sending limit reached".into(),
+                        ));
                     }
-                },
-                |_state, _data: (), res: Result<BotMessage>| { Ok(res?) }
-            );
+                }
 
-            Ok(fut)
-        });
+                let bot = chan.0.bot.clone();
+                let sender = chan.0.sender.clone();
+                let ctx = chan.0.bot.get_ctx();
+                let channel_id = chan.id();
+
+                let message_settings = if let Some(settings) = settings {
+                    message_settings_from_table(settings)?
+                } else {
+                    MessageSettings::default()
+                };
+
+                let fut = create_lua_future!(
+                    state,
+                    chan.0.sender,
+                    (),
+                    async move {
+                        match ctx
+                            .services()
+                            .send_message(channel_id, content, message_settings)
+                            .await
+                        {
+                            Ok(msg) => BotMessage::from_msg(bot, sender, &msg).await,
+                            Err(err) => Err(err),
+                        }
+                    },
+                    |_state, _data: (), res: Result<BotMessage>| { Ok(res?) }
+                );
+
+                Ok(fut)
+            },
+        );
 
         methods.add_method("send_typing", |_state, chan, (): ()| {
             let ctx = chan.0.bot.get_ctx();

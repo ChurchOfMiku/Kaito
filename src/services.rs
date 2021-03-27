@@ -115,7 +115,9 @@ macro_rules! services {
             }
 
             #[allow(unreachable_patterns)]
-            pub async fn edit_message<'a, C>(&self, channel_id: ChannelId, message_id: MessageId, content: C) -> Result<()>
+            pub async fn edit_message<'a, C>(
+                &self, channel_id: ChannelId, message_id: MessageId, content: C, message_settings: MessageSettings
+            )-> Result<()>
             where
                 C: ToMessageContent<'a>
             {
@@ -131,7 +133,7 @@ macro_rules! services {
                                 .as_ref()
                                 .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
                                 .service()
-                                .message(id, message_id).await?.edit(content).await
+                                .message(id, message_id).await?.edit(content, message_settings).await
                         }
                     ),+
                 }
@@ -409,7 +411,7 @@ bitflags! {
 pub trait Message<S: Service>: Send + Sync {
     fn author(&self) -> &Arc<S::User>;
     async fn channel(&self) -> Result<Arc<S::Channel>>;
-    async fn edit<'a, C>(&self, content: C) -> Result<()>
+    async fn edit<'a, C>(&self, content: C, settings: MessageSettings) -> Result<()>
     where
         Self: Sized,
         C: ToMessageContent<'a>;

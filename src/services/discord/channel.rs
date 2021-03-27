@@ -1,8 +1,12 @@
 use anyhow::Result;
-use serenity::model::channel;
+use serenity::{http::AttachmentType, model::channel};
 use std::{convert::TryInto, sync::Arc};
 
-use super::{message::DiscordMessage, server::DiscordServer, DiscordError, DiscordService};
+use super::{
+    message::{create_discord_embed, DiscordMessage},
+    server::DiscordServer,
+    DiscordError, DiscordService,
+};
 use crate::{
     message::{MessageContent, MessageSettings, ToMessageContent},
     services::{Channel, ChannelId},
@@ -55,7 +59,7 @@ impl Channel<DiscordService> for DiscordChannel {
             .channel
             .id()
             .send_message(&self.service.cache_and_http().http, |m| {
-                m.content(content).allowed_mentions(|am| {
+                let mut m = m.allowed_mentions(|am| {
                     am.empty_parse();
 
                     if let Some(mention_user) = settings.reply_user {
@@ -66,7 +70,24 @@ impl Channel<DiscordService> for DiscordChannel {
                     }
 
                     am
-                })
+                });
+
+                if !content.is_empty() {
+                    m = m.content(content);
+                }
+
+                if let Some(embed) = settings.embed {
+                    m = m.embed(|e| create_discord_embed(embed, e));
+                }
+
+                for (filename, data) in settings.attachments {
+                    m = m.add_file(AttachmentType::Bytes {
+                        data: data.into(),
+                        filename,
+                    });
+                }
+
+                m
             })
             .await?;
 

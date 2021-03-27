@@ -372,7 +372,7 @@ impl LuaState {
                                     vec![
                                         sandbox_state.to_lua(&self.inner)?,
                                         LuaValue::Table(future.clone()),
-                                        LuaValue::Boolean(true),
+                                        LuaValue::Boolean(succ),
                                     ],
                                     value.into_vec(),
                                 ]

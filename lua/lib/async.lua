@@ -17,6 +17,13 @@ async.CALLBACK_TYPE = {
 async.FutureMeta = async.FutureMeta or {}
 async.FutureMeta.__index = async.FutureMeta
 
+local future_states = {
+    [async.FUTURE_STATE.Pending] = "Pending",
+    [async.FUTURE_STATE.Executing] = "Executing",
+    [async.FUTURE_STATE.Resolved] = "Resolved",
+    [async.FUTURE_STATE.Rejected] = "Rejected",
+}
+
 local next_tick_cbs = {}
 
 function async.FutureMeta:thence(callback)
@@ -142,7 +149,7 @@ function async.FutureMeta:__call()
 end
 
 function async.FutureMeta:__tostring()
-    return "Future"
+    return "Future (" .. (future_states[self.state] or "") .. ")"
 end
 
 function async.FutureMeta:__type()
