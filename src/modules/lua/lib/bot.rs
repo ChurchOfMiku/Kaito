@@ -9,7 +9,7 @@ use std::{
 };
 
 use super::super::{
-    state::{LuaAsyncCallback, LuaState, SandboxMsg, SandboxTerminationReason},
+    state::{get_sandbox_state, LuaAsyncCallback, LuaState, SandboxMsg, SandboxTerminationReason},
     LuaSandboxReplies,
 };
 use crate::{
@@ -25,6 +25,22 @@ use crate::{
     settings::SettingContext,
     utils::escape_untrusted_text,
 };
+
+pub fn bot_flags(state: &Lua, bot_tbl: &LuaTable) -> Result<()> {
+    bot_tbl.set("ROLES", ROLES)?;
+
+    let features_tbl = state.create_table()?;
+
+    features_tbl.set("Edit", ServiceFeatures::EDIT.bits())?;
+    features_tbl.set("Embed", ServiceFeatures::EMBED.bits())?;
+    features_tbl.set("React", ServiceFeatures::REACT.bits())?;
+    features_tbl.set("Voice", ServiceFeatures::VOICE.bits())?;
+    features_tbl.set("Markdown", ServiceFeatures::MARKDOWN.bits())?;
+
+    bot_tbl.set("FEATURES", features_tbl)?;
+
+    Ok(())
+}
 
 pub fn lib_bot(
     state: &Lua,
@@ -400,7 +416,8 @@ pub fn lib_bot(
     let sender2 = sender.clone();
     let run_sandboxed_lua_fn = state.create_function(
         move |state,
-              (user, code, env): (
+              (user, msg, code, env): (
+            LuaAnyUserData,
             LuaAnyUserData,
             String,
             Table
@@ -408,6 +425,7 @@ pub fn lib_bot(
             let sandbox_state = sandbox_state.clone();
 
             let _user = user.borrow::<BotUser>()?.clone();
+            let msg = msg.borrow::<BotMessage>()?.clone();
 
             let env_encoded: String = serde_json::to_string(&LuaValue::Table(env))
                 .map_err(|err| LuaError::ExternalError(Arc::new(err)))?;
@@ -419,7 +437,7 @@ pub fn lib_bot(
                 async move {
                     let lua_state = sandbox_state.lock_arc().await;
 
-                    let (_sandbox_state, recv) = match lua_state.run_sandboxed(&code, Some(env_encoded)) {
+                    let (_sandbox_state, recv) = match lua_state.run_sandboxed(&code, msg, Some(env_encoded)) {
                         Ok(recv) => recv,
                         Err(err) => {
                             return Err(anyhow::anyhow!(err.to_string()));
@@ -540,17 +558,7 @@ pub fn lib_bot(
     })?;
     bot_tbl.set("set_data", set_data_fn)?;
 
-    bot_tbl.set("ROLES", ROLES)?;
-
-    let features_tbl = state.create_table()?;
-
-    features_tbl.set("Edit", ServiceFeatures::EDIT.bits())?;
-    features_tbl.set("Embed", ServiceFeatures::EMBED.bits())?;
-    features_tbl.set("React", ServiceFeatures::REACT.bits())?;
-    features_tbl.set("Voice", ServiceFeatures::VOICE.bits())?;
-    features_tbl.set("Markdown", ServiceFeatures::MARKDOWN.bits())?;
-
-    bot_tbl.set("FEATURES", features_tbl)?;
+    bot_flags(state, &bot_tbl)?;
 
     state.globals().set("bot", bot_tbl)?;
 
@@ -608,6 +616,14 @@ impl BotMessage {
 impl UserData for BotMessage {
     fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
         methods.add_method("reply", |state, msg, content: String| {
+            if let Some(sandbox_state) = get_sandbox_state(state) {
+                if sandbox_state.limits().messages_left_limit() {
+                    return Err(LuaError::RuntimeError(
+                        "sandbox message sending limit reached".into(),
+                    ));
+                }
+            }
+
             let bot = msg.0.bot.clone();
             let ctx = msg.0.bot.get_ctx();
             let sender = msg.0.sender.clone();
@@ -643,6 +659,14 @@ impl UserData for BotMessage {
         });
 
         methods.add_method("react", |state, msg, reaction: String| {
+            if let Some(sandbox_state) = get_sandbox_state(state) {
+                if sandbox_state.limits().message_reacts_left_limit() {
+                    return Err(LuaError::RuntimeError(
+                        "sandbox message reacting limit reached".into(),
+                    ));
+                }
+            }
+
             let ctx = msg.0.bot.get_ctx();
             let channel_id = msg.channel().id();
             let msg_id = msg.0.id;
@@ -659,6 +683,14 @@ impl UserData for BotMessage {
         });
 
         methods.add_method("edit", |state, msg, content: String| {
+            if let Some(sandbox_state) = get_sandbox_state(state) {
+                if sandbox_state.limits().message_edits_left_limit() {
+                    return Err(LuaError::RuntimeError(
+                        "sandbox message editing limit reached".into(),
+                    ));
+                }
+            }
+
             let ctx = msg.0.bot.get_ctx();
             let channel_id = msg.channel().id();
             let msg_id = msg.0.id;
@@ -675,6 +707,14 @@ impl UserData for BotMessage {
         });
 
         methods.add_method("delete", |state, msg, (): ()| {
+            if let Some(sandbox_state) = get_sandbox_state(state) {
+                if sandbox_state.limits().message_deletions_left_limit() {
+                    return Err(LuaError::RuntimeError(
+                        "sandbox message deletion limit reached".into(),
+                    ));
+                }
+            }
+
             let ctx = msg.0.bot.get_ctx();
             let channel_id = msg.channel().id();
             let msg_id = msg.0.id;
@@ -873,6 +913,14 @@ impl UserData for BotChannel {
         });
 
         methods.add_method("send", |state, chan, content: String| {
+            if let Some(sandbox_state) = get_sandbox_state(state) {
+                if sandbox_state.limits().messages_left_limit() {
+                    return Err(LuaError::RuntimeError(
+                        "sandbox message sending limit reached".into(),
+                    ));
+                }
+            }
+
             let bot = chan.0.bot.clone();
             let sender = chan.0.sender.clone();
             let ctx = chan.0.bot.get_ctx();

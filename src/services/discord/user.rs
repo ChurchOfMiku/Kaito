@@ -14,7 +14,7 @@ pub struct DiscordUser {
 impl DiscordUser {
     pub fn new(user: user::User, service: Arc<DiscordService>) -> DiscordUser {
         DiscordUser {
-            name: format!("{}#{}", user.name, user.discriminator),
+            name: format!("{}#{:04}", user.name, user.discriminator),
             nick: user.name.clone(),
             user,
             service,

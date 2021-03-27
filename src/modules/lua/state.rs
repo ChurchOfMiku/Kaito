@@ -55,6 +55,33 @@ macro_rules! atomic_get_set {
     };
 }
 
+macro_rules! atomic_limit {
+    ($ident:ident) => {
+        paste! {
+            pub fn[<$ident _limit>](&self) -> bool {
+                let left = self.$ident.load(Ordering::Relaxed);
+
+                if left > 0 {
+                    self.$ident.store(left - 1, Ordering::Relaxed);
+                    false
+                } else {
+                    true
+                }
+            }
+        }
+    };
+}
+
+pub fn is_sandboxed(state: &Lua) -> bool {
+    state
+        .named_registry_value::<str, SandboxState>("__SANDBOX_STATE")
+        .is_ok()
+}
+
+pub fn get_sandbox_state(state: &Lua) -> Option<SandboxState> {
+    state.named_registry_value("__SANDBOX_STATE").ok().clone()
+}
+
 pub struct LuaState {
     bot: Arc<Bot>,
     inner: Lua,
@@ -221,6 +248,7 @@ impl LuaState {
     pub fn run_sandboxed(
         &self,
         source: &str,
+        msg: BotMessage,
         env_encoded: Option<String>,
     ) -> Result<(Arc<SandboxStateInner>, Receiver<SandboxMsg>)> {
         let sandbox_tbl: Table = self.inner.globals().get("sandbox")?;
@@ -236,6 +264,10 @@ impl LuaState {
                 lines_left: AtomicU64::new(10),
                 characters_left: AtomicU64::new(2000),
                 http_calls_left: AtomicU64::new(2),
+                messages_left: AtomicU64::new(2),
+                message_edits_left: AtomicU64::new(2),
+                message_reacts_left: AtomicU64::new(10),
+                message_deletions_left: AtomicU64::new(2),
                 instructions: 262144,
             },
             http_rate_limiter: self.http_rate_limiter.clone(),
@@ -246,9 +278,9 @@ impl LuaState {
 
         if let Some(env_encoded) = env_encoded {
             let env = self.inner.to_value(&env_encoded)?;
-            run_fn.call((sandbox_state.clone(), source, env, true))?;
+            run_fn.call((sandbox_state.clone(), msg, source, env, true))?;
         } else {
-            run_fn.call((sandbox_state.clone(), source, LuaValue::Nil, true))?;
+            run_fn.call((sandbox_state.clone(), msg, source, LuaValue::Nil, true))?;
         }
 
         Ok((sandbox_state.0, receiver))
@@ -429,6 +461,12 @@ pub enum SandboxTerminationReason {
 #[derive(Clone)]
 pub struct SandboxState(pub Arc<SandboxStateInner>);
 
+impl SandboxState {
+    pub fn limits(&self) -> &SandboxLimits {
+        &self.0.limits
+    }
+}
+
 pub struct SandboxStateInner {
     pub async_sender: Sender<LuaAsyncCallback>,
     pub sender: Sender<SandboxMsg>,
@@ -441,12 +479,20 @@ pub struct SandboxLimits {
     pub lines_left: AtomicU64,
     pub characters_left: AtomicU64,
     pub http_calls_left: AtomicU64,
+    pub messages_left: AtomicU64,
+    pub message_edits_left: AtomicU64,
+    pub message_reacts_left: AtomicU64,
+    pub message_deletions_left: AtomicU64,
     pub instructions: u64,
 }
 
 impl SandboxLimits {
     atomic_get_set! {lines_left, u64}
     atomic_get_set! {characters_left, u64}
+    atomic_limit! {messages_left}
+    atomic_limit! {message_edits_left}
+    atomic_limit! {message_reacts_left}
+    atomic_limit! {message_deletions_left}
 }
 
 impl UserData for SandboxState {

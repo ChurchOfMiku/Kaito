@@ -336,7 +336,9 @@ impl LuaModule {
 
         let lua_state = self.get_sandbox_state().await?;
 
-        let (sandbox_state, recv) = match lua_state.run_sandboxed(&code, None) {
+        let sender = lua_state.async_sender();
+        let bot_msg = BotMessage::from_msg(self.bot.clone(), sender, &msg).await?;
+        let (sandbox_state, recv) = match lua_state.run_sandboxed(&code, bot_msg, None) {
             Ok(recv) => recv,
             Err(_err) => {
                 return Ok(());

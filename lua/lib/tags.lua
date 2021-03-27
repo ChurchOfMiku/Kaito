@@ -36,7 +36,7 @@ tags.SCRIPTED_TAGS = {
     },
     lua = {
         fn = function(ctx, code)
-            local err, res = bot.run_sandboxed_lua(ctx.user, code, {
+            local err, res = bot.run_sandboxed_lua(ctx.user, ctx.msg, code, {
                 args = ctx.extra_args,
                 user = {
                     name = ctx.user.name,

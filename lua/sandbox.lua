@@ -111,7 +111,7 @@ end
 
 function sandbox.async_callback(state, future, success, ...)
     local args = {...}
-    sandbox.run(state, function()
+    sandbox.run(state, nil, function()
         if success then
             future:__handle_resolve(true, table.unpack(args))
         else
@@ -120,13 +120,17 @@ function sandbox.async_callback(state, future, success, ...)
     end)
 end
 
-function sandbox.run(state, source, env, main)
+function sandbox.run(state, msg, source, env, main)
     local fenv = update_env(sandbox.env.get_env(), state)
 
     if env then
         for k,v in pairs(json.decode(env)) do
             fenv[k] = v
         end
+    end
+
+    if msg then
+        fenv.msg = msg
     end
 
     local fn, err
@@ -167,7 +171,7 @@ function sandbox.run(state, source, env, main)
                 local succ, thread, res = sandbox.run_coroutine(thread)
 
                 if not succ then
-                    sandbox.run(state, function()
+                    sandbox.run(state, nil, function()
                         state:error(tostring(res))
                     end)
                     return true
@@ -225,7 +229,7 @@ function sandbox.run(state, source, env, main)
         end
     else
         local tostring = tostring
-        sandbox.run(state, function()
+        sandbox.run(state, msg, function()
             state:error(tostring(res))
         end)
     end

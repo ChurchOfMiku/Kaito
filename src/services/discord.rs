@@ -87,7 +87,7 @@ impl EventHandler for SerenityHandler {
         }
 
         println!(
-            "{}#{} is connected!",
+            "{}#{:04} is connected!",
             ready.user.name, ready.user.discriminator
         );
     }
