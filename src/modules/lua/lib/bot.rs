@@ -107,7 +107,10 @@ fn message_settings_from_table(settings_tbl: LuaTable) -> Result<MessageSettings
     if let Ok(attachments) = settings_tbl.get::<&str, LuaTable>("attachments") {
         for res in attachments.pairs::<i64, LuaTable>() {
             if let Ok((_, field)) = res {
-                if let (Ok(filename), Ok(data)) = (field.get("filename"), field.get("data")) {
+                if let (Ok(filename), Ok(data)) =
+                    (field.get("filename"), field.get::<&str, LuaString>("data"))
+                {
+                    let data = data.as_bytes().to_owned();
                     settings.attachments.push((filename, data));
                 }
             }
