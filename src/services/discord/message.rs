@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::{channel::DiscordChannel, user::DiscordUser, DiscordService};
 use crate::{
-    message::{MessageContent, ToMessageContent},
+    message::{Attachment, MessageContent, ToMessageContent},
     services::{Message, MessageId},
 };
 
@@ -12,15 +12,30 @@ pub struct DiscordMessage {
     author: Arc<DiscordUser>,
     msg: channel::Message,
     service: Arc<DiscordService>,
+    attachments: Vec<Arc<Attachment>>,
 }
 
 impl DiscordMessage {
     pub fn new(msg: channel::Message, service: Arc<DiscordService>) -> DiscordMessage {
+        let attachments = msg
+            .attachments
+            .iter()
+            .map(|a| {
+                Arc::new(Attachment {
+                    filename: a.filename.to_string(),
+                    url: a.proxy_url.to_string(),
+                    size: Some(a.size),
+                    dimensions: a.dimensions(),
+                })
+            })
+            .collect();
+
         let author = Arc::new(DiscordUser::new(msg.author.clone(), service.clone()));
         DiscordMessage {
             author,
             msg,
             service,
+            attachments,
         }
     }
 }
@@ -84,6 +99,10 @@ impl Message<DiscordService> for DiscordMessage {
         self.msg.delete(&self.service.cache_and_http()).await?;
 
         Ok(())
+    }
+
+    fn attachments(&self) -> &[Arc<Attachment>] {
+        &self.attachments
     }
 
     fn service(&self) -> &Arc<DiscordService> {

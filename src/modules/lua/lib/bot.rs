@@ -17,7 +17,7 @@ use crate::{
         db::{Uid, User as DbUser},
         Bot, ROLES,
     },
-    message::MessageSettings,
+    message::{Attachment, MessageSettings},
     services::{
         Channel, ChannelId, Message, MessageId, Server, ServerId, Service, ServiceFeatures,
         ServiceKind, Services, User, UserId,
@@ -567,6 +567,7 @@ pub struct BotMessageInner {
     author: BotUser,
     channel: BotChannel,
     content: String,
+    attachments: Vec<Arc<Attachment>>,
     service: ServiceKind,
 }
 
@@ -576,6 +577,7 @@ impl BotMessage {
         sender: Sender<LuaAsyncCallback>,
         msg: &Arc<dyn Message<impl Service>>,
     ) -> Result<BotMessage> {
+        let attachments = msg.attachments().to_vec();
         let service_user = msg.author().clone() as Arc<dyn User<_>>;
         let author = BotUser::from_user(bot.clone(), &service_user).await?;
         let service_channel = msg.channel().await? as Arc<dyn Channel<_>>;
@@ -589,6 +591,7 @@ impl BotMessage {
             author,
             channel,
             content: msg.content().to_string(),
+            attachments,
             service: msg.service().kind(),
         })))
     }
@@ -692,6 +695,18 @@ impl UserData for BotMessage {
                 "id" => Ok(mlua::Value::String(
                     state.create_string(&msg.0.id.to_short_str())?,
                 )),
+                "attachments" => {
+                    let attachments = state.create_table()?;
+
+                    for (i, attachment) in msg.0.attachments.iter().enumerate() {
+                        attachments.raw_insert(
+                            (i + 1) as i64,
+                            state.create_userdata(BotMessageAttachment(attachment.clone()))?,
+                        )?;
+                    }
+
+                    Ok(mlua::Value::Table(attachments))
+                }
                 "author" => Ok(mlua::Value::UserData(
                     state.create_userdata(msg.author().clone())?,
                 )),
@@ -704,6 +719,36 @@ impl UserData for BotMessage {
                 "service" => Ok(mlua::Value::String(
                     state.create_string(Services::id_from_kind(msg.0.service).as_bytes())?,
                 )),
+                _ => Ok(mlua::Value::Nil),
+            }
+        });
+    }
+}
+
+#[derive(Clone)]
+pub struct BotMessageAttachment(Arc<Attachment>);
+
+impl UserData for BotMessageAttachment {
+    fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
+        methods.add_meta_method(MetaMethod::Index, |state, a, index: String| {
+            match index.as_str() {
+                "filename" => Ok(mlua::Value::String(state.create_string(&a.0.filename)?)),
+                "url" => Ok(mlua::Value::String(state.create_string(&a.0.url)?)),
+                "size" => Ok(if let Some(size) = a.0.size {
+                    mlua::Value::Number(size as f64)
+                } else {
+                    mlua::Value::Nil
+                }),
+                "dimensions" => Ok(if let Some((width, height)) = a.0.dimensions {
+                    let tbl = state.create_table()?;
+
+                    tbl.set("width", width)?;
+                    tbl.set("height", height)?;
+
+                    mlua::Value::Table(tbl)
+                } else {
+                    mlua::Value::Nil
+                }),
                 _ => Ok(mlua::Value::Nil),
             }
         });

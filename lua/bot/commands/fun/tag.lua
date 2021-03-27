@@ -31,7 +31,6 @@ bot.add_command("tag", {
                     key = "value",
                     name = "VALUE",
                     description = "Tag value",
-                    required = true,
                 }
             },
             description = "Create a new tag",
@@ -44,14 +43,24 @@ bot.add_command("tag", {
                     return msg:reply("error: the tag name cannot be longer than " .. tags.MAX_NAME_LIMIT .. " characters"):await()
                 end
 
-                local value = args.value
+                local value = args.value or ""
 
                 if #extra_args > 0 then
                     value = value .. " " .. table.concat(extra_args, " ")
                 end
 
+                for i, attachment in pairs(msg.attachments) do
+                    if value ~= "" then value = value .. "\n" end
+
+                    value = value .. attachment.url
+                end
+
                 if #value > tags.MAX_VALUE_LIMIT then
                     return msg:reply("error: the tag value cannot be longer than " .. tags.MAX_VALUE_LIMIT .. " characters"):await()
+                end
+
+                if #value == 0 then
+                    return msg:reply("error: the tag value cannot be empty"):await()
                 end
 
                 if tags.count_user_tags(msg.author):await() > tags.MAX_USER_TAGS then
@@ -112,7 +121,6 @@ bot.add_command("tag", {
                     key = "value",
                     name = "VALUE",
                     description = "Tag value",
-                    required = true,
                 },
                 {
                     key = "force",
@@ -134,14 +142,24 @@ bot.add_command("tag", {
                     end
                 end
 
-                local value = args.value
+                local value = args.value or ""
 
                 if #extra_args > 0 then
                     value = value .. " " .. table.concat(extra_args, " ")
                 end
 
+                for i, attachment in pairs(msg.attachments) do
+                    if value ~= "" then value = value .. "\n" end
+
+                    value = value .. attachment.url
+                end
+
                 if #value > tags.MAX_VALUE_LIMIT then
-                    return msg:reply("error: the tag value cannot be longer than " .. tags.MAX_VALUE_LIMIT .. " characters")
+                    return msg:reply("error: the tag value cannot be longer than " .. tags.MAX_VALUE_LIMIT .. " characters"):await()
+                end
+
+                if #value == 0 then
+                    return msg:reply("error: the tag value cannot be empty"):await()
                 end
 
                 tag:edit(value):await()

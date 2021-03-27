@@ -7,7 +7,7 @@ pub mod discord;
 use crate::{
     bot::Bot,
     config::ConfigServices,
-    message::{MessageSettings, ToMessageContent},
+    message::{Attachment, MessageSettings, ToMessageContent},
 };
 
 macro_rules! service_id_functions {
@@ -415,6 +415,7 @@ pub trait Message<S: Service>: Send + Sync {
         C: ToMessageContent<'a>;
     async fn delete(&self) -> Result<()>;
     fn content(&self) -> &str;
+    fn attachments(&self) -> &[Arc<Attachment>];
     fn service(&self) -> &Arc<S>;
     fn id(&self) -> MessageId;
 }
