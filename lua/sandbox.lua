@@ -17,7 +17,7 @@ function sandbox.exec(state, fenv, fn)
 
     -- Create the coroutine thread
     local thread = coroutine.create(fn)
-    local timeout = os.clock() + 2
+    local timeout = os.clock() + 12
 
     debug.sethook(
         thread,
