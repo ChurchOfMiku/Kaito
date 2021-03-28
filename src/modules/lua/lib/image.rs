@@ -874,7 +874,7 @@ impl UserData for DrawCommandBuffer {
             }
         });
 
-        draw_method!(methods, "arc", |(ox, oy, px, py)|: (f64, f64, f64, f64), {
+        draw_method!(methods, "circle", |(ox, oy, px, py)|: (f64, f64, f64, f64), {
             DrawCommand::Circle {
                 ox, oy, px, py
             }
