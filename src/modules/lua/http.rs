@@ -109,6 +109,7 @@ pub fn http_fetch<'a>(
     let http_rate_limiter = sandbox_state.0.http_rate_limiter.clone();
     let sender = sandbox_state.0.async_sender.clone();
 
+    let max_size = 1024 * 1024 * 4; // Max 4MB
     let fut = create_lua_future!(
         state,
         sender,
@@ -121,8 +122,14 @@ pub fn http_fetch<'a>(
                 Ok(mut res) => {
                     let body = res
                         .body_mut()
+                        .map_err(|e: hyper::Error| e.into())
                         .try_fold(Vec::new(), |mut data, chunk| async move {
                             data.extend_from_slice(&chunk);
+
+                            if data.len() > max_size {
+                                return Err(anyhow::anyhow!("max body size limit reached")).into();
+                            }
+
                             Ok(data)
                         })
                         .await
@@ -239,11 +246,12 @@ pub fn lib_http(state: &Lua, sender: Sender<LuaAsyncCallback>) -> anyhow::Result
             }
         };
 
+        let max_size = 1024 * 1024 * 4; // Max 4MB
         let fut = if options.get::<&str, bool>("stream").unwrap_or(false) {
             create_lua_future!(
                 state,
                 sender,
-                (url, sender.clone()),
+                (max_size, url, sender.clone()),
                 async move {
                     match client.request(req).await {
                         Ok(res) => Ok(res),
@@ -251,10 +259,10 @@ pub fn lib_http(state: &Lua, sender: Sender<LuaAsyncCallback>) -> anyhow::Result
                     }
                 },
                 |state,
-                 data: (String, Sender<LuaAsyncCallback>),
+                 data: (usize, String, Sender<LuaAsyncCallback>),
                  res: Result<Response<Body>, hyper::Error>| {
                     let res = res?;
-                    let (url, sender) = data;
+                    let (max_size, url, sender) = data;
 
                     let tbl: LuaTable = state.create_table()?;
                     let headers_tbl: LuaTable = state.create_table()?;
@@ -273,24 +281,31 @@ pub fn lib_http(state: &Lua, sender: Sender<LuaAsyncCallback>) -> anyhow::Result
                     tbl.set("statusText", res.status().canonical_reason())?;
                     tbl.set("url", state.create_string(&url)?)?;
 
-                    fn create_next_body(state: &Lua, sender: Sender<LuaAsyncCallback>, mut body: Body) -> anyhow::Result<LuaTable> {
+                    fn create_next_body(state: &Lua, sender: Sender<LuaAsyncCallback>, max_size: usize, bytes_received: usize, mut body: Body) -> anyhow::Result<LuaTable> {
                         Ok(create_lua_future!(
                             state,
                             sender,
-                            sender,
+                            (max_size, bytes_received, sender),
                             async move {
                                 let bytes = body.next().await;
 
                                 (body, bytes)
                             },
-                            |state, sender: Sender<LuaAsyncCallback>, res: (Body, Option<Result<Bytes, hyper::Error>>)| {
+                            |state, data: (usize, usize, Sender<LuaAsyncCallback>), res: (Body, Option<Result<Bytes, hyper::Error>>)| {
+                                let (max_size, mut bytes_received, sender) = data;
                                 if let Some(data) = res.1 {
                                     let data = data?;
+
+                                    bytes_received += data.len();
+
+                                    if bytes_received > max_size {
+                                        return Err(anyhow::anyhow!("max body size limit reached")).into();
+                                    }
 
                                     let tbl: LuaTable = state.create_table()?;
 
                                     tbl.set("body", state.create_string(&data.to_vec())?)?;
-                                    tbl.set("next_body", create_next_body(state, sender, res.0)?)?;
+                                    tbl.set("next_body", create_next_body(state, sender, max_size, bytes_received, res.0)?)?;
 
                                     Ok(LuaMultiValue::from_vec(vec![Value::Table(tbl)]))
                                 } else {
@@ -302,7 +317,7 @@ pub fn lib_http(state: &Lua, sender: Sender<LuaAsyncCallback>) -> anyhow::Result
 
                     tbl.set(
                         "next_body",
-                        create_next_body(state, sender, res.into_body())?
+                        create_next_body(state, sender, max_size, 0, res.into_body())?
                     )?;
 
                     Ok(tbl)
@@ -318,8 +333,14 @@ pub fn lib_http(state: &Lua, sender: Sender<LuaAsyncCallback>) -> anyhow::Result
                         Ok(mut res) => {
                             let body = res
                                 .body_mut()
+                                .map_err(|e: hyper::Error| e.into())
                                 .try_fold(Vec::new(), |mut data, chunk| async move {
                                     data.extend_from_slice(&chunk);
+
+                                    if data.len() > max_size {
+                                        return Err(anyhow::anyhow!("max body size limit reached")).into();
+                                    }
+
                                     Ok(data)
                                 })
                                 .await
