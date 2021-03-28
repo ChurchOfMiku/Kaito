@@ -54,6 +54,8 @@ async fn run() -> Result<()> {
 
 #[tokio::main]
 async fn main() {
+    graphicsmagick::initialize();
+
     if let Err(err) = run().await {
         println!("Error: {}", err.to_string());
     }

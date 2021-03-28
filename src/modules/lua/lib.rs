@@ -11,6 +11,7 @@ use std::{
 #[macro_use]
 pub mod r#async;
 pub mod bot;
+pub mod image;
 pub mod os;
 pub mod tags;
 

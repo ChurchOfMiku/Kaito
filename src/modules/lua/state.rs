@@ -21,6 +21,7 @@ use super::{
     http,
     lib::{
         bot::{bot_flags, lib_bot, BotMessage, BotUser},
+        image::lib_image,
         include_lua, lib_include,
         os::lib_os,
         r#async::lib_async,
@@ -134,6 +135,7 @@ impl LuaState {
                 async_sender.clone(),
                 bot_state.expect("sandbox state for bot state"),
             )?;
+            lib_image(&inner, async_sender.clone())?;
             http::lib_http(&inner, async_sender.clone())?;
             lib_tags(&inner, bot, async_sender.clone())?;
             inner.set_named_registry_value("__ASYNC_THREADS", inner.create_table()?)?;

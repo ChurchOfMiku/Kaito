@@ -14,6 +14,7 @@ chrono = "0.4.19"
 crossbeam = "0.8.0"
 futures = "0.3"
 glob = "0.3.0"
+graphicsmagick = { git = "https://github.com/m4tsa/graphicsmagick-rs.git" }
 governor = "0.3.2"
 hyper = { version = "0.14", features = [ "stream", "client", "http1" ] }
 hyper-tls = "0.5"
