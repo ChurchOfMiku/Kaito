@@ -8,6 +8,7 @@ sandbox.env.base_env = {
     },
     async = async,
     bot = bot,
+    image = image,
     math = math,
     string = string,
     table = table,

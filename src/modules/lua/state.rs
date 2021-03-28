@@ -122,6 +122,7 @@ impl LuaState {
         let lua_root_path = bot.share_path().join("lua");
 
         lib_include(lua_root_path.clone(), &inner)?;
+        lib_image(&inner, async_sender.clone())?;
 
         if sandbox {
             let bot_tbl = inner.create_table()?;
@@ -135,7 +136,6 @@ impl LuaState {
                 async_sender.clone(),
                 bot_state.expect("sandbox state for bot state"),
             )?;
-            lib_image(&inner, async_sender.clone())?;
             http::lib_http(&inner, async_sender.clone())?;
             lib_tags(&inner, bot, async_sender.clone())?;
             inner.set_named_registry_value("__ASYNC_THREADS", inner.create_table()?)?;
@@ -273,6 +273,8 @@ impl LuaState {
                 message_edits_left: AtomicU64::new(5),
                 message_reacts_left: AtomicU64::new(10),
                 message_deletions_left: AtomicU64::new(2),
+                images_left: AtomicU64::new(4),
+                image_operations_left: AtomicU64::new(16),
                 instructions: 262144,
             },
             http_rate_limiter: self.http_rate_limiter.clone(),
@@ -488,6 +490,8 @@ pub struct SandboxLimits {
     pub message_edits_left: AtomicU64,
     pub message_reacts_left: AtomicU64,
     pub message_deletions_left: AtomicU64,
+    pub images_left: AtomicU64,
+    pub image_operations_left: AtomicU64,
     pub instructions: u64,
 }
 
@@ -498,6 +502,8 @@ impl SandboxLimits {
     atomic_limit! {message_edits_left}
     atomic_limit! {message_reacts_left}
     atomic_limit! {message_deletions_left}
+    atomic_limit! {images_left}
+    atomic_limit! {image_operations_left}
 }
 
 impl UserData for SandboxState {

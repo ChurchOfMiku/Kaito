@@ -1,17 +1,23 @@
 use anyhow::Result;
 use crossbeam::channel::Sender;
+use futures::TryStreamExt;
 use graphicsmagick::{
     types,
     wand::{MagickWand, PixelWand},
 };
+use hyper::{Body, Client, Request};
+use hyper_tls::HttpsConnector;
 use mlua::{
     prelude::{FromLua, LuaError, LuaMultiValue, LuaString, LuaTable, LuaValue},
     Lua, MetaMethod, UserData, UserDataMethods,
 };
-use std::sync::Arc;
+use std::{net::IpAddr, sync::Arc};
 use tokio::task::JoinError;
 
-use crate::modules::lua::state::LuaAsyncCallback;
+use crate::modules::lua::{
+    http::HttpError,
+    state::{get_sandbox_state, LuaAsyncCallback},
+};
 
 macro_rules! magick_enum {
     ($name:ident, $inner:ty, $num_ty:ty, { $($enum_ident:ident,)+ }) => {
@@ -160,7 +166,8 @@ magick_enum! {
 
 fn create_image_info<'a>(wand: &mut MagickWand<'a>) -> Result<ImageInfo> {
     Ok(ImageInfo {
-        resolution: wand.get_image_resolution()?,
+        width: wand.get_image_width(),
+        height: wand.get_image_height(),
         images: wand.get_number_images(),
         format: wand.get_image_format()?,
     })
@@ -172,6 +179,12 @@ pub fn lib_image(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
     // image.from_data
     let sender2 = sender.clone();
     let from_data_fn = state.create_function(move |state, data: LuaString| {
+        if let Some(sandbox_state) = get_sandbox_state(state) {
+            if sandbox_state.limits().images_left_limit() {
+                return Err(LuaError::RuntimeError("image limit reached".into()));
+            }
+        }
+
         let data = data.as_bytes().to_owned();
         let sender3 = sender2.clone();
 
@@ -194,6 +207,134 @@ pub fn lib_image(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
         Ok(fut)
     })?;
     image.set("from_data", from_data_fn)?;
+
+    // image.from_url
+    let sender2 = sender.clone();
+    let from_url_fn = state.create_function(move |state, url: String| {
+        if let Some(sandbox_state) = get_sandbox_state(state) {
+            if sandbox_state.limits().images_left_limit() {
+                return Err(LuaError::RuntimeError("image limit reached".into()));
+            }
+        }
+
+        let sender3 = sender2.clone();
+
+        // Parse url
+        let url = match url::Url::parse(&url) {
+            Ok(url) => url,
+            Err(err) => {
+                return Err(LuaError::ExternalError(Arc::new(
+                    HttpError::ErrorParsingUrl(err.to_string()),
+                )));
+            }
+        };
+
+        match url.scheme() {
+            "http" | "https" => {}
+            _ => {
+                return Err(LuaError::ExternalError(Arc::new(HttpError::UnknownScheme(
+                    url.scheme().into(),
+                ))));
+            }
+        }
+
+        let addrs = match url.socket_addrs(|| Some(if url.scheme() == "https" { 443 } else { 80 }))
+        {
+            Ok(addrs) => addrs,
+            Err(err) => {
+                return Err(LuaError::ExternalError(Arc::new(
+                    HttpError::ErrorResolvingHosts(err.to_string()),
+                )));
+            }
+        };
+
+        let disallowed_addr = addrs.iter().find(|addr| {
+            let ip = addr.ip();
+            ip.is_loopback()
+                || ip.is_multicast()
+                || ip.is_unspecified()
+                || (match ip {
+                    IpAddr::V4(ip) => match ip.octets() {
+                        [10, ..] => true,
+                        [172, b, ..] if b >= 16 && b <= 31 => true,
+                        [192, 168, ..] => true,
+                        _ => false,
+                    },
+                    IpAddr::V6(_) => false, // IPv6 should be disabled in networking
+                })
+        });
+
+        if let Some(disallowed_addr) = disallowed_addr {
+            return Err(LuaError::ExternalError(Arc::new(
+                HttpError::DisallowedAddress(disallowed_addr.to_string()),
+            )));
+        }
+
+        let https = HttpsConnector::new();
+        let client = Client::builder().build::<_, Body>(https);
+
+        let url = url.to_string();
+        let req = match Request::builder()
+            .method("GET")
+            .uri(url.clone())
+            .body(Body::empty())
+        {
+            Ok(req) => req,
+            Err(err) => {
+                return Err(LuaError::ExternalError(Arc::new(
+                    HttpError::ErrorBuildingRequest(err.to_string()),
+                )));
+            }
+        };
+
+        let max_size = 1024 * 1024 * 4; // Max 4MB
+        let fut = create_lua_future!(
+            state,
+            sender2,
+            (),
+            async move {
+                match client.request(req).await {
+                    Ok(mut res) => {
+                        let body = res
+                            .body_mut()
+                            .map_err(|e: hyper::Error| e.into())
+                            .try_fold(Vec::new(), |mut data, chunk| async move {
+                                data.extend_from_slice(&chunk);
+
+                                if data.len() > max_size {
+                                    return Err(anyhow::anyhow!("max body size limit reached"))
+                                        .into();
+                                }
+
+                                Ok(data)
+                            })
+                            .await
+                            .unwrap_or_default();
+
+                        match tokio::task::spawn_blocking(move || {
+                            // Ensure the image is valid
+                            let mut wand = MagickWand::new();
+                            wand.read_image_blob(&body)?;
+                            let info = create_image_info(&mut wand)?;
+                            drop(wand);
+
+                            Ok(Image(Arc::new(ImageInner { data: body, info }), sender3))
+                        })
+                        .await
+                        {
+                            Ok(res) => res,
+                            Err(err) => Err(err.into()),
+                        }
+                    }
+                    Err(err) => Err(err.into()),
+                }
+            },
+            |_state, _data: (), res: Result<Image>| { Ok(res?) }
+        );
+
+        Ok(fut)
+    })?;
+    image.set("from_url", from_url_fn)?;
 
     image.set("CHANNEL_TYPE", ChannelType::create_table(state)?)?;
 
@@ -235,6 +376,14 @@ impl Image {
 macro_rules! image_method {
     ($methods:expr, $name:expr, |$args:pat|: $args_ty:ty, |$wand:ident| $block:block) => {
         $methods.add_method($name, |state, image, $args: $args_ty| {
+            if let Some(sandbox_state) = get_sandbox_state(state) {
+                if sandbox_state.limits().image_operations_left_limit() {
+                    return Err(LuaError::RuntimeError(
+                        "image operation limit reached".into(),
+                    ));
+                }
+            }
+
             let data = image.copy_data();
             let sender = image.async_sender();
 
@@ -444,8 +593,8 @@ impl UserData for Image {
             .as_str()
         {
             "size" => Ok(mlua::Value::Number(image.0.data.len() as f64)),
-            "width" => Ok(mlua::Value::Number(image.info().resolution.0)),
-            "height" => Ok(mlua::Value::Number(image.info().resolution.1)),
+            "width" => Ok(mlua::Value::Number(image.info().width as f64)),
+            "height" => Ok(mlua::Value::Number(image.info().height as f64)),
             "images" => Ok(mlua::Value::Number(image.info().images as f64)),
             "format" => Ok(mlua::Value::String(
                 state.create_string(&image.info().format)?,
@@ -457,8 +606,8 @@ impl UserData for Image {
         methods.add_meta_method(MetaMethod::ToString, |state, image, (): ()| {
             state.create_string(&format!(
                 "Image {{ width = {}, height = {}, format = \"{}\" }}",
-                image.info().resolution.0,
-                image.info().resolution.1,
+                image.info().width,
+                image.info().height,
                 image.info().format
             ))
         });
@@ -471,7 +620,8 @@ pub struct ImageInner {
 }
 
 pub struct ImageInfo {
-    resolution: (f64, f64),
+    width: u64,
+    height: u64,
     images: u64,
     format: String,
 }
