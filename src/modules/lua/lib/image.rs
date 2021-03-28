@@ -1166,12 +1166,6 @@ impl UserData for PathCommandBuffer {
             }
         });
 
-        path_method!(methods, "curve_quadratic_bezier_relative", |(x1, y1, x, y)|: (f64, f64, f64, f64), {
-            PathCommand::QuadraticBezierRelative {
-                x1, y1, x, y
-            }
-        });
-
         path_method!(methods, "curve_quadratic_bezier_smooth", |(x, y)|: (f64, f64), {
             PathCommand::QuadraticBezierSmoothAbsolute {
                 x, y
@@ -1196,13 +1190,13 @@ impl UserData for PathCommandBuffer {
             }
         });
 
-        path_method!(methods, "curve_smooth", |(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag , x, y)|: (f64, f64, f64, u32, u32, f64, f64), {
+        path_method!(methods, "elliptic_arc", |(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag , x, y)|: (f64, f64, f64, u32, u32, f64, f64), {
             PathCommand::EllipticArcAbsolute {
                 rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x, y
             }
         });
 
-        path_method!(methods, "curve_smooth_relative", |(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag , x, y)|: (f64, f64, f64, u32, u32, f64, f64), {
+        path_method!(methods, "elliptic_arc_relative", |(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag , x, y)|: (f64, f64, f64, u32, u32, f64, f64), {
             PathCommand::EllipticArcRelative {
                 rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x, y
             }
