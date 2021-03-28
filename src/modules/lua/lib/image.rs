@@ -964,8 +964,8 @@ impl UserData for DrawCommandBuffer {
             DrawCommand::SkewY(degrees)
         });
 
-        draw_method!(methods, "set_stroke_anti_alias", |anti_alias|: u32, {
-            DrawCommand::SetStrokeAntiAlias(anti_alias)
+        draw_method!(methods, "set_stroke_antialias", |antialias|: u32, {
+            DrawCommand::SetStrokeAntiAlias(antialias)
         });
 
         draw_method!(methods, "set_stroke_line_cap", |line_cap|: LineCap, {
@@ -980,8 +980,8 @@ impl UserData for DrawCommandBuffer {
             DrawCommand::SetStrokeWidth(width)
         });
 
-        draw_method!(methods, "set_text_anti_alias", |anti_alias|: u32, {
-            DrawCommand::SetTextAntiAlias(anti_alias)
+        draw_method!(methods, "set_text_antialias", |antialias|: u32, {
+            DrawCommand::SetTextAntiAlias(antialias)
         });
 
         draw_method!(methods, "set_text_decoration", |decoration|: DecorationType, {
@@ -1142,107 +1142,107 @@ impl UserData for PathCommandBuffer {
             PathCommand::Close
         });
 
-        path_method!(methods, "curve_to_absolute", |(x1, y1, x2, y2, x, y)|: (f64, f64, f64, f64, f64, f64), {
+        path_method!(methods, "curve", |(x1, y1, x2, y2, x, y)|: (f64, f64, f64, f64, f64, f64), {
             PathCommand::Absolute {
                 x1, y1, x2, y2, x, y
             }
         });
 
-        path_method!(methods, "curve_to_relative", |(x1, y1, x2, y2, x, y)|: (f64, f64, f64, f64, f64, f64), {
+        path_method!(methods, "curve_relative", |(x1, y1, x2, y2, x, y)|: (f64, f64, f64, f64, f64, f64), {
             PathCommand::Relative {
                 x1, y1, x2, y2, x, y
             }
         });
 
-        path_method!(methods, "curve_to_quadratic_bezier_absolute", |(x1, y1, x, y)|: (f64, f64, f64, f64), {
+        path_method!(methods, "curve_quadratic_bezier", |(x1, y1, x, y)|: (f64, f64, f64, f64), {
             PathCommand::QuadraticBezierAbsolute {
                 x1, y1, x, y
             }
         });
 
-        path_method!(methods, "curve_to_quadratic_bezier_relative", |(x1, y1, x, y)|: (f64, f64, f64, f64), {
+        path_method!(methods, "curve_quadratic_bezier_relative", |(x1, y1, x, y)|: (f64, f64, f64, f64), {
             PathCommand::QuadraticBezierRelative {
                 x1, y1, x, y
             }
         });
 
-        path_method!(methods, "curve_to_quadratic_bezier_relative", |(x1, y1, x, y)|: (f64, f64, f64, f64), {
+        path_method!(methods, "curve_quadratic_bezier_relative", |(x1, y1, x, y)|: (f64, f64, f64, f64), {
             PathCommand::QuadraticBezierRelative {
                 x1, y1, x, y
             }
         });
 
-        path_method!(methods, "curve_to_quadratic_bezier_smooth_absolute", |(x, y)|: (f64, f64), {
+        path_method!(methods, "curve_quadratic_bezier_smooth", |(x, y)|: (f64, f64), {
             PathCommand::QuadraticBezierSmoothAbsolute {
                 x, y
             }
         });
 
-        path_method!(methods, "curve_to_quadratic_bezier_smooth_relative", |(x, y)|: (f64, f64), {
+        path_method!(methods, "curve_quadratic_bezier_smooth_relative", |(x, y)|: (f64, f64), {
             PathCommand::QuadraticBezierSmoothRelative {
                 x, y
             }
         });
 
-        path_method!(methods, "curve_to_smooth_absolute", |(x2, y2, x, y)|: (f64, f64, f64, f64), {
+        path_method!(methods, "curve_smooth", |(x2, y2, x, y)|: (f64, f64, f64, f64), {
             PathCommand::SmoothAbsolute {
                 x2, y2, x, y
             }
         });
 
-        path_method!(methods, "curve_to_smooth_relative", |(x2, y2, x, y)|: (f64, f64, f64, f64), {
+        path_method!(methods, "curve_smooth_relative", |(x2, y2, x, y)|: (f64, f64, f64, f64), {
             PathCommand::SmoothRelative {
                 x2, y2, x, y
             }
         });
 
-        path_method!(methods, "curve_to_smooth_absolute", |(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag , x, y)|: (f64, f64, f64, u32, u32, f64, f64), {
+        path_method!(methods, "curve_smooth", |(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag , x, y)|: (f64, f64, f64, u32, u32, f64, f64), {
             PathCommand::EllipticArcAbsolute {
                 rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x, y
             }
         });
 
-        path_method!(methods, "curve_to_smooth_relative", |(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag , x, y)|: (f64, f64, f64, u32, u32, f64, f64), {
+        path_method!(methods, "curve_smooth_relative", |(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag , x, y)|: (f64, f64, f64, u32, u32, f64, f64), {
             PathCommand::EllipticArcRelative {
                 rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x, y
             }
         });
 
-        path_method!(methods, "line_to_absolute", |(x, y)|: (f64, f64), {
+        path_method!(methods, "line", |(x, y)|: (f64, f64), {
             PathCommand::LineAbsolute {
                 x, y
             }
         });
 
-        path_method!(methods, "line_to_relative", |(x, y)|: (f64, f64), {
+        path_method!(methods, "line_relative", |(x, y)|: (f64, f64), {
             PathCommand::LineRelative {
                 x, y
             }
         });
 
-        path_method!(methods, "line_to_horizontal_absolute", |x|: f64, {
+        path_method!(methods, "line_horizontal", |x|: f64, {
             PathCommand::LineHorizontalAbsolute(x)
         });
 
-        path_method!(methods, "line_to_horizontal_relative", |x|: f64, {
+        path_method!(methods, "line_horizontal_relative", |x|: f64, {
             PathCommand::LineHorizontalRelative(x)
         });
 
-        path_method!(methods, "line_to_vertical_absolute", |y|: f64, {
+        path_method!(methods, "line_vertical", |y|: f64, {
             PathCommand::LineVerticalAbsolute(y)
         });
 
-        path_method!(methods, "line_to_vertical_relative", |y|: f64, {
+        path_method!(methods, "line_vertical_relative", |y|: f64, {
             PathCommand::LineVerticalRelative(y)
         });
 
-        path_method!(methods, "move_to_absolute", |(x, y)|: (f64, f64), {
+        path_method!(methods, "move", |(x, y)|: (f64, f64), {
             PathCommand::MoveToAbsolute {
                 x, y
             }
         });
 
-        path_method!(methods, "move_to_relative", |(x, y)|: (f64, f64), {
+        path_method!(methods, "move_relative", |(x, y)|: (f64, f64), {
             PathCommand::MoveToRelative {
                 x, y
             }
