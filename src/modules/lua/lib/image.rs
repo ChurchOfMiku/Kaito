@@ -263,7 +263,7 @@ fn create_image_info<'a>(wand: &mut MagickWand<'a>) -> Result<ImageInfo> {
         width: wand.get_image_width(),
         height: wand.get_image_height(),
         images: wand.get_number_images(),
-        format: wand.get_image_format()?,
+        format: wand.get_image_format()?.to_lowercase(),
     })
 }
 
@@ -278,6 +278,49 @@ pub fn lib_image(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
     // image.create_path
     let create_path_fn = state.create_function(|_, (): ()| Ok(PathCommandBuffer::default()))?;
     image.set("create_path", create_path_fn)?;
+
+    // image.create
+    let sender2 = sender.clone();
+    let create_image_fn = state.create_function(
+        move |_, (width, height, background): (u64, u64, Option<String>)| {
+            if width > 2000 || height > 2000 {
+                return Err(LuaError::RuntimeError(
+                    "image cannot be bigger than 2000x2000".into(),
+                ));
+            }
+
+            let mut wand = MagickWand::new();
+
+            wand.set_size(width, height)
+                .map_err(|e| LuaError::RuntimeError(e.to_string()))?;
+            wand.read_image("xc:none")
+                .map_err(|e| LuaError::RuntimeError(e.to_string()))?;
+            wand.set_image_format("PNG")
+                .map_err(|e| LuaError::RuntimeError(e.to_string()))?;
+
+            if let Some(background) = background {
+                let mut draw = DrawingWand::new();
+
+                wand.draw_image(
+                    &draw
+                        .set_fill_color(&PixelWand::new().set_color(&background))
+                        .set_stroke_line_cap(types::LineCap::SquareCap)
+                        .rectangle(-8.0, -8.0, (width + 8) as f64, (height + 8) as f64),
+                )
+                .map_err(|e| LuaError::RuntimeError(e.to_string()))?;
+            }
+
+            let data = wand
+                .write_image_blob()
+                .ok_or_else(|| LuaError::RuntimeError("unable to write image".into()))?;
+            let info =
+                create_image_info(&mut wand).map_err(|e| LuaError::RuntimeError(e.to_string()))?;
+            drop(wand);
+
+            Ok(Image(Arc::new(ImageInner { data, info }), sender2.clone()))
+        },
+    )?;
+    image.set("create", create_image_fn)?;
 
     // image.from_data
     let sender2 = sender.clone();
