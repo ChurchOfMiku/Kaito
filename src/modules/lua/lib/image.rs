@@ -795,8 +795,8 @@ impl UserData for Image {
             wand.transparent_image(PixelWand::new().set_color(&target), opacity, fuzz)?
         });
 
-        image_method!(methods, "trim", |fuzz|: f64, |wand| {
-            wand.trim_image(fuzz)?
+        image_method!(methods, "trim", |trim|: f64, |wand| {
+            wand.trim_image(trim)?
         });
 
         image_method!(methods, "unsharp_mask", |(radius, sigma, amount, threshold)|: (f64, f64, f64, f64), |wand| {
