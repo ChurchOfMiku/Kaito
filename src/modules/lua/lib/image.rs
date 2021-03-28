@@ -3,7 +3,7 @@ use crossbeam::channel::Sender;
 use futures::TryStreamExt;
 use graphicsmagick::{
     types,
-    wand::{MagickWand, PixelWand},
+    wand::{DrawingWand, MagickWand, PixelWand},
 };
 use hyper::{Body, Client, Request};
 use hyper_tls::HttpsConnector;
@@ -11,7 +11,10 @@ use mlua::{
     prelude::{FromLua, LuaError, LuaMultiValue, LuaString, LuaTable, LuaValue},
     Lua, MetaMethod, UserData, UserDataMethods,
 };
-use std::{net::IpAddr, sync::Arc};
+use std::{
+    net::IpAddr,
+    sync::{Arc, Mutex},
+};
 use tokio::task::JoinError;
 
 use crate::modules::lua::{
@@ -20,7 +23,7 @@ use crate::modules::lua::{
 };
 
 macro_rules! magick_enum {
-    ($name:ident, $inner:ty, $num_ty:ty, { $($enum_ident:ident,)+ }) => {
+    ($name:ident, $inner:ty, $num_ty:ty, { $($lua_ident:ident => $enum_ident:ident,)+ }) => {
         pub struct $name($inner);
 
         impl $name {
@@ -28,7 +31,7 @@ macro_rules! magick_enum {
                 let tbl = state.create_table()?;
 
                 $(
-                    tbl.set(stringify!($enum_ident), <$inner>::$enum_ident as $num_ty)?;
+                    tbl.set(stringify!($lua_ident), <$inner>::$enum_ident as $num_ty)?;
                 )+
 
                 Ok(tbl)
@@ -69,18 +72,18 @@ magick_enum! {
     types::ChannelType,
     u32,
     {
-        UndefinedChannel,
-        RedChannel,
-        CyanChannel,
-        GreenChannel,
-        MagentaChannel,
-        BlueChannel,
-        YellowChannel,
-        OpacityChannel,
-        BlackChannel,
-        MatteChannel,
-        AllChannels,
-        GrayChannel,
+        Undefined => UndefinedChannel,
+        Red => RedChannel,
+        Cyan => CyanChannel,
+        Green => GreenChannel,
+        Magenta => MagentaChannel,
+        Blue => BlueChannel,
+        Yellow => YellowChannel,
+        Opacity => OpacityChannel,
+        Black => BlackChannel,
+        Matte => MatteChannel,
+        All =>AllChannels,
+        Gray => GrayChannel,
     }
 }
 
@@ -89,54 +92,66 @@ magick_enum! {
     types::CompositeOperator,
     u32,
     {
-        UndefinedCompositeOp,
-        OverCompositeOp,
-        InCompositeOp,
-        OutCompositeOp,
-        AtopCompositeOp,
-        XorCompositeOp,
-        PlusCompositeOp,
-        MinusCompositeOp,
-        AddCompositeOp,
-        SubtractCompositeOp,
-        DifferenceCompositeOp,
-        MultiplyCompositeOp,
-        BumpmapCompositeOp,
-        CopyCompositeOp,
-        CopyRedCompositeOp,
-        CopyGreenCompositeOp,
-        CopyBlueCompositeOp,
-        CopyOpacityCompositeOp,
-        ClearCompositeOp,
-        DissolveCompositeOp,
-        DisplaceCompositeOp,
-        ModulateCompositeOp,
-        ThresholdCompositeOp,
-        NoCompositeOp,
-        DarkenCompositeOp,
-        LightenCompositeOp,
-        HueCompositeOp,
-        SaturateCompositeOp,
-        ColorizeCompositeOp,
-        LuminizeCompositeOp,
-        ScreenCompositeOp,
-        OverlayCompositeOp,
-        CopyCyanCompositeOp,
-        CopyMagentaCompositeOp,
-        CopyYellowCompositeOp,
-        CopyBlackCompositeOp,
-        DivideCompositeOp,
-        HardLightCompositeOp,
-        ExclusionCompositeOp,
-        ColorDodgeCompositeOp,
-        ColorBurnCompositeOp,
-        SoftLightCompositeOp,
-        LinearBurnCompositeOp,
-        LinearDodgeCompositeOp,
-        LinearLightCompositeOp,
-        VividLightCompositeOp,
-        PinLightCompositeOp,
-        HardMixCompositeOp,
+        Undefined => UndefinedCompositeOp,
+        Over => OverCompositeOp,
+        In => InCompositeOp,
+        Out => OutCompositeOp,
+        Atop => AtopCompositeOp,
+        Xor => XorCompositeOp,
+        Plus => PlusCompositeOp,
+        Minus => MinusCompositeOp,
+        Add => AddCompositeOp,
+        Subtract => SubtractCompositeOp,
+        Difference => DifferenceCompositeOp,
+        Multiply => MultiplyCompositeOp,
+        Bumpmap => BumpmapCompositeOp,
+        Copy => CopyCompositeOp,
+        CopyRed => CopyRedCompositeOp,
+        CopyGreen => CopyGreenCompositeOp,
+        CopyBlue => CopyBlueCompositeOp,
+        CopyOpacity => CopyOpacityCompositeOp,
+        Clear => ClearCompositeOp,
+        Dissolve => DissolveCompositeOp,
+        Displace => DisplaceCompositeOp,
+        Modulate => ModulateCompositeOp,
+        Threshold => ThresholdCompositeOp,
+        No => NoCompositeOp,
+        Darken => DarkenCompositeOp,
+        Lighten => LightenCompositeOp,
+        Hue => HueCompositeOp,
+        Saturate => SaturateCompositeOp,
+        Colorize => ColorizeCompositeOp,
+        Lumenize => LuminizeCompositeOp,
+        Screen => ScreenCompositeOp,
+        Overlay => OverlayCompositeOp,
+        CopyCyan => CopyCyanCompositeOp,
+        CopyMagenta => CopyMagentaCompositeOp,
+        CopyYellow => CopyYellowCompositeOp,
+        CopyBlack => CopyBlackCompositeOp,
+        Divide => DivideCompositeOp,
+        HardLight => HardLightCompositeOp,
+        Exclusion => ExclusionCompositeOp,
+        ColorDodge => ColorDodgeCompositeOp,
+        ColorBurn => ColorBurnCompositeOp,
+        SoftLight => SoftLightCompositeOp,
+        LinearBurn => LinearBurnCompositeOp,
+        LinearDodge => LinearDodgeCompositeOp,
+        LinearLight => LinearLightCompositeOp,
+        VividLight => VividLightCompositeOp,
+        PinLight => PinLightCompositeOp,
+        HardMix => HardMixCompositeOp,
+    }
+}
+
+magick_enum! {
+    DecorationType,
+    types::DecorationType,
+    u32,
+    {
+        None => NoDecoration,
+        Underline => UnderlineDecoration,
+        Overline => OverlineDecoration,
+        Strikethrough => LineThroughDecoration,
     }
 }
 
@@ -145,22 +160,101 @@ magick_enum! {
     types::FilterTypes,
     u32,
     {
-        UndefinedFilter,
-        PointFilter,
-        BoxFilter,
-        TriangleFilter,
-        HermiteFilter,
-        HanningFilter,
-        HammingFilter,
-        BlackmanFilter,
-        GaussianFilter,
-        QuadraticFilter,
-        CubicFilter,
-        CatromFilter,
-        MitchellFilter,
-        LanczosFilter,
-        BesselFilter,
-        SincFilter,
+        Undefined => UndefinedFilter,
+        Point => PointFilter,
+        Box => BoxFilter,
+        Triangle => TriangleFilter,
+        Hermite => HermiteFilter,
+        Hanning => HanningFilter,
+        Hamming => HammingFilter,
+        Blackman => BlackmanFilter,
+        Gaussian => GaussianFilter,
+        Quadratic => QuadraticFilter,
+        Cubic => CubicFilter,
+        Catrom => CatromFilter,
+        Mitchell => MitchellFilter,
+        Lanczos => LanczosFilter,
+        Bessel => BesselFilter,
+        Sinc => SincFilter,
+    }
+}
+
+magick_enum! {
+    LineCap,
+    types::LineCap,
+    u32,
+    {
+        Undefined => UndefinedCap,
+        Butt => ButtCap,
+        Round => RoundCap,
+        Square => SquareCap,
+    }
+}
+
+magick_enum! {
+    LineJoin,
+    types::LineJoin,
+    u32,
+    {
+        Undefined => UndefinedJoin,
+        Miter => MiterJoin,
+        Round => RoundJoin,
+        Bevel => BevelJoin,
+    }
+}
+
+magick_enum! {
+    PaintMethod,
+    types::PaintMethod,
+    u32,
+    {
+        Point => PointMethod,
+        Replace => ReplaceMethod,
+        Floodfill => FloodfillMethod,
+        FillToBorder =>FillToBorderMethod,
+        Reset => ResetMethod,
+    }
+}
+
+magick_enum! {
+    FillRule,
+    types::FillRule,
+    u32,
+    {
+        Undefined => UndefinedRule,
+        EvenOdd => EvenOddRule,
+        NonZero => NonZeroRule,
+    }
+}
+
+magick_enum! {
+    StyleType,
+    types::StyleType,
+    u32,
+    {
+        Normal => NormalStyle,
+        Italic => ItalicStyle,
+        Oblique => ObliqueStyle,
+        Any => AnyStyle,
+    }
+}
+
+magick_enum! {
+    TextAlign,
+    types::GravityType,
+    u32,
+    {
+        Forget => ForgetGravity,
+        TopLeft => NorthWestGravity,
+        TopCenter => NorthGravity,
+        TopRight => NorthEastGravity,
+        LeftCenter => WestGravity,
+        Center => CenterGravity,
+        RightCenter => EastGravity,
+        LeftBottom => SouthWestGravity,
+        BottomCenter => SouthGravity,
+        BottomRight => SouthEastGravity,
+        Static => StaticGravity,
     }
 }
 
@@ -175,6 +269,15 @@ fn create_image_info<'a>(wand: &mut MagickWand<'a>) -> Result<ImageInfo> {
 
 pub fn lib_image(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
     let image = state.create_table()?;
+
+    // image.create_draw_buffer
+    let create_draw_buffer_fn =
+        state.create_function(|_, (): ()| Ok(DrawCommandBuffer::default()))?;
+    image.set("create_draw_buffer", create_draw_buffer_fn)?;
+
+    // image.create_path
+    let create_path_fn = state.create_function(|_, (): ()| Ok(PathCommandBuffer::default()))?;
+    image.set("create_path", create_path_fn)?;
 
     // image.from_data
     let sender2 = sender.clone();
@@ -337,13 +440,18 @@ pub fn lib_image(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
     image.set("from_url", from_url_fn)?;
 
     image.set("CHANNEL_TYPE", ChannelType::create_table(state)?)?;
-
     image.set(
         "COMPOSITE_OPERATOR",
         CompositeOperator::create_table(state)?,
     )?;
-
+    image.set("FILL_RULE", FillRule::create_table(state)?)?;
+    image.set("FONT_STYLE", StyleType::create_table(state)?)?;
     image.set("FILTER_TYPES", FilterTypes::create_table(state)?)?;
+    image.set("LINE_CAP", LineCap::create_table(state)?)?;
+    image.set("LINE_JOIN", LineJoin::create_table(state)?)?;
+    image.set("PAINT_METHOD", PaintMethod::create_table(state)?)?;
+    image.set("TEXT_ALIGN", TextAlign::create_table(state)?)?;
+    image.set("TEXT_DECORATION", DecorationType::create_table(state)?)?;
 
     state.globals().set("image", image)?;
 
@@ -439,7 +547,74 @@ impl UserData for Image {
             wand.crop_image(width, height, x, y)?
         });
 
-        // TODO: Draw method
+        image_method!(methods, "draw", |draw_commands|: DrawCommandBuffer, |wand| {
+            let mut draw_wand = &mut DrawingWand::new();
+
+            for command in draw_commands.commands.lock().unwrap().drain(..) {
+                draw_wand = match command {
+                    DrawCommand::Arc { sx, sy, ex, ey, sd, ed } => draw_wand.arc(sx, sy, ex, ey, sd, ed),
+                    DrawCommand::Circle { ox, oy, px, py } => draw_wand.circle(ox, oy, px, py),
+                    DrawCommand::Color { x, y, paint_method } => draw_wand.color(x, y, paint_method.inner()),
+                    DrawCommand::Ellipse { ox, oy, rx, ry, start, end } => draw_wand.ellipse(ox, oy, rx, ry, start, end),
+                    DrawCommand::SetFillColor { color } => draw_wand.set_fill_color(PixelWand::new().set_color(&color)),
+                    DrawCommand::SetFillOpacity(opacity) => draw_wand.set_fill_opacity(opacity),
+                    DrawCommand::SetFillRule(rule) => draw_wand.set_fill_rule(rule.inner()),
+                    DrawCommand::SetFont(font) => draw_wand.set_font(&font),
+                    DrawCommand::SetFontFamily(font_family) => draw_wand.set_font_family(&font_family),
+                    DrawCommand::SetFontSize(font_size) => draw_wand.set_font_size(font_size),
+                    DrawCommand::SetFontStyle(font_style) => draw_wand.set_font_style(font_style.inner()),
+                    DrawCommand::Line { sx, sy, ex, ey } => draw_wand.line(sx, sy, ex, ey),
+                    DrawCommand::Matte { x, y, paint_method } => draw_wand.matte(x, y, paint_method.inner()),
+                    DrawCommand::Path(commands) => {
+                        draw_wand = draw_wand.path_start();
+
+                        for command in commands {
+                            draw_wand = match command {
+                                PathCommand::Close => draw_wand.path_close(),
+                                PathCommand::Absolute { x1, y1, x2, y2, x, y } => draw_wand.path_curve_to_absolute(x1, y1, x2, y2, x, y),
+                                PathCommand::Relative { x1, y1, x2, y2, x, y } => draw_wand.path_curve_to_relative(x1, y1, x2, y2, x, y),
+                                PathCommand::QuadraticBezierAbsolute { x1, y1, x, y } => draw_wand.path_curve_to_quadratic_bezier_absolute(x1, y1, x, y),
+                                PathCommand::QuadraticBezierRelative { x1, y1, x, y } => draw_wand.path_curve_to_quadratic_bezier_relative(x1, y1, x, y),
+                                PathCommand::QuadraticBezierSmoothAbsolute { x, y } => draw_wand.path_curve_to_quadratic_bezier_smooth_absolute(x, y),
+                                PathCommand::QuadraticBezierSmoothRelative { x, y } => draw_wand.path_curve_to_quadratic_bezier_smooth_relative(x, y),
+                                PathCommand::SmoothAbsolute { x2, y2, x, y } => draw_wand.path_curve_to_smooth_absolute(x2, y2, x, y),
+                                PathCommand::SmoothRelative { x2, y2, x, y } => draw_wand.path_curve_to_smooth_relative(x2, y2, x, y),
+                                PathCommand::EllipticArcAbsolute { rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x, y } => draw_wand.path_elliptic_arc_absolute(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x, y),
+                                PathCommand::EllipticArcRelative { rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x, y } => draw_wand.path_elliptic_arc_relative(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x, y),
+                                PathCommand::LineAbsolute { x, y } => draw_wand.path_line_to_absolute(x, y),
+                                PathCommand::LineRelative { x, y } => draw_wand.path_line_to_relative(x, y),
+                                PathCommand::LineHorizontalAbsolute(x) => draw_wand.path_line_to_horizontal_absolute(x),
+                                PathCommand::LineHorizontalRelative(x) => draw_wand.path_line_to_horizontal_relative(x),
+                                PathCommand::LineVerticalAbsolute(y) => draw_wand.path_line_to_vertical_absolute(y),
+                                PathCommand::LineVerticalRelative(y) => draw_wand.path_line_to_vertical_absolute(y),
+                                PathCommand::MoveToAbsolute { x, y } => draw_wand.path_move_to_absolute(x, y),
+                                PathCommand::MoveToRelative { x, y } => draw_wand.path_move_to_relative(x, y)
+                            }
+                        }
+
+                        draw_wand.path_finish()
+                    },
+                    DrawCommand::Rectangle { x1, y1, x2, y2 } => draw_wand.rectangle(x1, y1, x2, y2),
+                    DrawCommand::Rotate(degrees) => draw_wand.rotate(degrees),
+                    DrawCommand::RoundRectangle { x1, y1, x2, y2, rx, ry } => draw_wand.round_rectangle(x1, y1, x2, y2, rx, ry),
+                    DrawCommand::Scale { x, y } => draw_wand.scale(x, y),
+                    DrawCommand::SkewX(degrees) => draw_wand.skew_x(degrees),
+                    DrawCommand::SkewY(degrees) => draw_wand.skew_y(degrees),
+                    DrawCommand::SetStrokeAntiAlias(aa) => draw_wand.set_stroke_antialias(aa),
+                    DrawCommand::SetStrokeLineCap(cap) => draw_wand.set_stroke_line_cap(cap.inner()),
+                    DrawCommand::SetStrokeLineJoin(join) => draw_wand.set_stroke_line_join(join.inner()),
+                    DrawCommand::SetStrokeWidth(width) => draw_wand.set_stroke_width(width),
+                    DrawCommand::SetTextAntiAlias(aa) => draw_wand.set_text_antialias(aa),
+                    DrawCommand::SetTextDecoration(decoration) => draw_wand.set_text_decoration(decoration.inner()),
+                    DrawCommand::SetTextUnderColor(color) => draw_wand.set_text_under_color(PixelWand::new().set_color(&color)),
+                    DrawCommand::Text { align, x, y, text } => draw_wand.set_gravity(align.inner()).annotation(x, y, &text),
+                    DrawCommand::Translate { x, y } => draw_wand.translate(x, y),
+                    DrawCommand::SetViewbox { x1, y1, x2, y2 } => draw_wand.set_viewbox(x1, y1, x2, y2),
+                }
+            }
+
+            wand.draw_image(&draw_wand)?
+        });
 
         image_method!(methods, "extent", |(width, height, x, y)|: (u64, u64, i64, i64), |wand| {
             wand.extent_image(width, height, x, y)?
@@ -624,4 +799,508 @@ pub struct ImageInfo {
     height: u64,
     images: u64,
     format: String,
+}
+
+#[derive(Clone, Default)]
+struct DrawCommandBuffer {
+    commands: Arc<Mutex<Vec<DrawCommand>>>,
+}
+
+macro_rules! draw_method {
+    ($methods:expr, $name:expr, |$args:pat|: $args_ty:ty, $block:block) => {
+        $methods.add_method($name, |_state, buffer, $args: $args_ty| {
+            let mut commands = buffer.commands.lock().unwrap();
+
+            if commands.len() >= 32 {
+                return Err(LuaError::RuntimeError(
+                    "cannot have more than 32 draw commands in one draw command buffer".into(),
+                ));
+            }
+
+            commands.push($block);
+            Ok(buffer.clone())
+        });
+    };
+}
+
+impl UserData for DrawCommandBuffer {
+    fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
+        draw_method!(methods, "arc", |(sx, sy, ex, ey, sd, ed)|: (f64, f64, f64, f64, f64, f64), {
+            DrawCommand::Arc {
+                sx, sy, ex, ey, sd, ed
+            }
+        });
+
+        draw_method!(methods, "arc", |(ox, oy, px, py)|: (f64, f64, f64, f64), {
+            DrawCommand::Circle {
+                ox, oy, px, py
+            }
+        });
+
+        draw_method!(methods, "color", |(x, y, paint_method)|: (f64, f64, PaintMethod), {
+            DrawCommand::Color {
+                x, y, paint_method
+            }
+        });
+
+        draw_method!(methods, "ellipse", |(ox, oy, rx, ry, start, end)|: (f64, f64, f64, f64, f64, f64), {
+            DrawCommand::Ellipse {
+                ox, oy, rx, ry, start, end
+            }
+        });
+
+        draw_method!(methods, "set_fill_color", |color|: String, {
+            DrawCommand::SetFillColor {
+                color
+            }
+        });
+
+        draw_method!(methods, "set_fill_opacity", |opacity|: f64, {
+            DrawCommand::SetFillOpacity(opacity)
+        });
+
+        draw_method!(methods, "set_fill_rule", |rule|: FillRule, {
+            DrawCommand::SetFillRule(rule)
+        });
+
+        draw_method!(methods, "set_font", |font|: String, {
+            DrawCommand::SetFont(font)
+        });
+
+        draw_method!(methods, "set_font_family", |font_family|: String, {
+            DrawCommand::SetFontFamily(font_family)
+        });
+
+        draw_method!(methods, "set_font_size", |size|: f64, {
+            DrawCommand::SetFontSize(size)
+        });
+
+        draw_method!(methods, "set_font_style", |style|: StyleType, {
+            DrawCommand::SetFontStyle(style)
+        });
+
+        draw_method!(methods, "line", |(sx, sy, ex, ey)|: (f64, f64, f64, f64), {
+            DrawCommand::Line { sx, sy, ex, ey }
+        });
+
+        draw_method!(methods, "matte", |(x, y, paint_method)|: (f64, f64, PaintMethod), {
+            DrawCommand::Matte { x, y, paint_method }
+        });
+
+        draw_method!(methods, "path", |path|: PathCommandBuffer, {
+            DrawCommand::Path(path.commands.lock().unwrap().clone())
+        });
+
+        draw_method!(methods, "rectangle", |(x1, y1, x2, y2)|: (f64, f64, f64, f64), {
+            DrawCommand::Rectangle {
+                x1, y1, x2, y2
+            }
+        });
+
+        draw_method!(methods, "rotate", |degrees|: f64, {
+            DrawCommand::Rotate(degrees)
+        });
+
+        draw_method!(methods, "round_rectangle", |(x1, y1, x2, y2, rx, ry)|: (f64, f64, f64, f64, f64, f64), {
+            DrawCommand::RoundRectangle {
+                x1, y1, x2, y2, rx, ry
+            }
+        });
+
+        draw_method!(methods, "scale", |(x, y)|: (f64, f64), {
+            DrawCommand::Scale {
+                x, y
+            }
+        });
+
+        draw_method!(methods, "skew_x", |degrees|: f64, {
+            DrawCommand::SkewX(degrees)
+        });
+
+        draw_method!(methods, "skew_y", |degrees|: f64, {
+            DrawCommand::SkewY(degrees)
+        });
+
+        draw_method!(methods, "set_stroke_anti_alias", |anti_alias|: u32, {
+            DrawCommand::SetStrokeAntiAlias(anti_alias)
+        });
+
+        draw_method!(methods, "set_stroke_line_cap", |line_cap|: LineCap, {
+            DrawCommand::SetStrokeLineCap(line_cap)
+        });
+
+        draw_method!(methods, "set_stroke_line_join", |line_join|: LineJoin, {
+            DrawCommand::SetStrokeLineJoin(line_join)
+        });
+
+        draw_method!(methods, "set_stroke_line_width", |width|: f64, {
+            DrawCommand::SetStrokeWidth(width)
+        });
+
+        draw_method!(methods, "set_text_anti_alias", |anti_alias|: u32, {
+            DrawCommand::SetTextAntiAlias(anti_alias)
+        });
+
+        draw_method!(methods, "set_text_decoration", |decoration|: DecorationType, {
+            DrawCommand::SetTextDecoration(decoration)
+        });
+
+        draw_method!(methods, "set_text_under_color", |color|: String, {
+            DrawCommand::SetTextUnderColor(color)
+        });
+
+        draw_method!(methods, "text", |(align, x, y, text)|: (TextAlign, f64, f64, String), {
+            DrawCommand::Text {
+                align, x, y, text
+            }
+        });
+
+        draw_method!(methods, "translate", |(x, y)|: (f64, f64), {
+            DrawCommand::Translate {
+                x, y
+            }
+        });
+
+        draw_method!(methods, "set_viewbox", |(x1, y1, x2, y2)|: (u64, u64, u64, u64), {
+            DrawCommand::SetViewbox {
+                x1, y1, x2, y2
+            }
+        });
+
+        methods.add_meta_method(MetaMethod::ToString, |state, buffer, (): ()| {
+            state.create_string(&format!(
+                "DrawCommandBuffer {{ commands = {} }}",
+                buffer.commands.lock().unwrap().len()
+            ))
+        });
+    }
+}
+
+enum DrawCommand {
+    Arc {
+        sx: f64,
+        sy: f64,
+        ex: f64,
+        ey: f64,
+        sd: f64,
+        ed: f64,
+    },
+    Circle {
+        ox: f64,
+        oy: f64,
+        px: f64,
+        py: f64,
+    },
+    Color {
+        x: f64,
+        y: f64,
+        paint_method: PaintMethod,
+    },
+    Ellipse {
+        ox: f64,
+        oy: f64,
+        rx: f64,
+        ry: f64,
+        start: f64,
+        end: f64,
+    },
+    SetFillColor {
+        color: String,
+    },
+    SetFillOpacity(f64),
+    SetFillRule(FillRule),
+    SetFont(String),
+    SetFontFamily(String),
+    SetFontSize(f64),
+    SetFontStyle(StyleType),
+    Line {
+        sx: f64,
+        sy: f64,
+        ex: f64,
+        ey: f64,
+    },
+    Matte {
+        x: f64,
+        y: f64,
+        paint_method: PaintMethod,
+    },
+    Path(Vec<PathCommand>),
+    Rectangle {
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+    },
+    Rotate(f64),
+    RoundRectangle {
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        rx: f64,
+        ry: f64,
+    },
+    Scale {
+        x: f64,
+        y: f64,
+    },
+    SkewX(f64),
+    SkewY(f64),
+    SetStrokeAntiAlias(u32),
+    SetStrokeLineCap(LineCap),
+    SetStrokeLineJoin(LineJoin),
+    SetStrokeWidth(f64),
+    SetTextAntiAlias(u32),
+    SetTextDecoration(DecorationType),
+    SetTextUnderColor(String),
+    Text {
+        align: TextAlign,
+        x: f64,
+        y: f64,
+        text: String,
+    },
+    Translate {
+        x: f64,
+        y: f64,
+    },
+    SetViewbox {
+        x1: u64,
+        y1: u64,
+        x2: u64,
+        y2: u64,
+    },
+}
+
+#[derive(Clone, Default)]
+struct PathCommandBuffer {
+    commands: Arc<Mutex<Vec<PathCommand>>>,
+}
+
+macro_rules! path_method {
+    ($methods:expr, $name:expr, |$args:pat|: $args_ty:ty, $block:block) => {
+        $methods.add_method($name, |_state, path, $args: $args_ty| {
+            let mut commands = path.commands.lock().unwrap();
+
+            if commands.len() >= 512 {
+                return Err(LuaError::RuntimeError(
+                    "cannot have more than 512 path commands in one path".into(),
+                ));
+            }
+
+            commands.push($block);
+            Ok(path.clone())
+        });
+    };
+}
+
+impl UserData for PathCommandBuffer {
+    fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
+        path_method!(methods, "close", |()|: (), {
+            PathCommand::Close
+        });
+
+        path_method!(methods, "curve_to_absolute", |(x1, y1, x2, y2, x, y)|: (f64, f64, f64, f64, f64, f64), {
+            PathCommand::Absolute {
+                x1, y1, x2, y2, x, y
+            }
+        });
+
+        path_method!(methods, "curve_to_relative", |(x1, y1, x2, y2, x, y)|: (f64, f64, f64, f64, f64, f64), {
+            PathCommand::Relative {
+                x1, y1, x2, y2, x, y
+            }
+        });
+
+        path_method!(methods, "curve_to_quadratic_bezier_absolute", |(x1, y1, x, y)|: (f64, f64, f64, f64), {
+            PathCommand::QuadraticBezierAbsolute {
+                x1, y1, x, y
+            }
+        });
+
+        path_method!(methods, "curve_to_quadratic_bezier_relative", |(x1, y1, x, y)|: (f64, f64, f64, f64), {
+            PathCommand::QuadraticBezierRelative {
+                x1, y1, x, y
+            }
+        });
+
+        path_method!(methods, "curve_to_quadratic_bezier_relative", |(x1, y1, x, y)|: (f64, f64, f64, f64), {
+            PathCommand::QuadraticBezierRelative {
+                x1, y1, x, y
+            }
+        });
+
+        path_method!(methods, "curve_to_quadratic_bezier_smooth_absolute", |(x, y)|: (f64, f64), {
+            PathCommand::QuadraticBezierSmoothAbsolute {
+                x, y
+            }
+        });
+
+        path_method!(methods, "curve_to_quadratic_bezier_smooth_relative", |(x, y)|: (f64, f64), {
+            PathCommand::QuadraticBezierSmoothRelative {
+                x, y
+            }
+        });
+
+        path_method!(methods, "curve_to_smooth_absolute", |(x2, y2, x, y)|: (f64, f64, f64, f64), {
+            PathCommand::SmoothAbsolute {
+                x2, y2, x, y
+            }
+        });
+
+        path_method!(methods, "curve_to_smooth_relative", |(x2, y2, x, y)|: (f64, f64, f64, f64), {
+            PathCommand::SmoothRelative {
+                x2, y2, x, y
+            }
+        });
+
+        path_method!(methods, "curve_to_smooth_absolute", |(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag , x, y)|: (f64, f64, f64, u32, u32, f64, f64), {
+            PathCommand::EllipticArcAbsolute {
+                rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x, y
+            }
+        });
+
+        path_method!(methods, "curve_to_smooth_relative", |(rx, ry, x_axis_rotation, large_arc_flag, sweep_flag , x, y)|: (f64, f64, f64, u32, u32, f64, f64), {
+            PathCommand::EllipticArcRelative {
+                rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x, y
+            }
+        });
+
+        path_method!(methods, "line_to_absolute", |(x, y)|: (f64, f64), {
+            PathCommand::LineAbsolute {
+                x, y
+            }
+        });
+
+        path_method!(methods, "line_to_relative", |(x, y)|: (f64, f64), {
+            PathCommand::LineRelative {
+                x, y
+            }
+        });
+
+        path_method!(methods, "line_to_horizontal_absolute", |x|: f64, {
+            PathCommand::LineHorizontalAbsolute(x)
+        });
+
+        path_method!(methods, "line_to_horizontal_relative", |x|: f64, {
+            PathCommand::LineHorizontalRelative(x)
+        });
+
+        path_method!(methods, "line_to_vertical_absolute", |y|: f64, {
+            PathCommand::LineVerticalAbsolute(y)
+        });
+
+        path_method!(methods, "line_to_vertical_relative", |y|: f64, {
+            PathCommand::LineVerticalRelative(y)
+        });
+
+        path_method!(methods, "move_to_absolute", |(x, y)|: (f64, f64), {
+            PathCommand::MoveToAbsolute {
+                x, y
+            }
+        });
+
+        path_method!(methods, "move_to_relative", |(x, y)|: (f64, f64), {
+            PathCommand::MoveToRelative {
+                x, y
+            }
+        });
+
+        methods.add_meta_method(MetaMethod::ToString, |state, path, (): ()| {
+            state.create_string(&format!(
+                "PathCommandBuffer {{ commands = {} }}",
+                path.commands.lock().unwrap().len()
+            ))
+        });
+    }
+}
+
+#[derive(Clone)]
+enum PathCommand {
+    Close,
+    Absolute {
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        x: f64,
+        y: f64,
+    },
+    Relative {
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        x: f64,
+        y: f64,
+    },
+    QuadraticBezierAbsolute {
+        x1: f64,
+        y1: f64,
+        x: f64,
+        y: f64,
+    },
+    QuadraticBezierRelative {
+        x1: f64,
+        y1: f64,
+        x: f64,
+        y: f64,
+    },
+    QuadraticBezierSmoothAbsolute {
+        x: f64,
+        y: f64,
+    },
+    QuadraticBezierSmoothRelative {
+        x: f64,
+        y: f64,
+    },
+    SmoothAbsolute {
+        x2: f64,
+        y2: f64,
+        x: f64,
+        y: f64,
+    },
+    SmoothRelative {
+        x2: f64,
+        y2: f64,
+        x: f64,
+        y: f64,
+    },
+    EllipticArcAbsolute {
+        rx: f64,
+        ry: f64,
+        x_axis_rotation: f64,
+        large_arc_flag: u32,
+        sweep_flag: u32,
+        x: f64,
+        y: f64,
+    },
+    EllipticArcRelative {
+        rx: f64,
+        ry: f64,
+        x_axis_rotation: f64,
+        large_arc_flag: u32,
+        sweep_flag: u32,
+        x: f64,
+        y: f64,
+    },
+    LineAbsolute {
+        x: f64,
+        y: f64,
+    },
+    LineRelative {
+        x: f64,
+        y: f64,
+    },
+    LineHorizontalAbsolute(f64),
+    LineHorizontalRelative(f64),
+    LineVerticalAbsolute(f64),
+    LineVerticalRelative(f64),
+    MoveToAbsolute {
+        x: f64,
+        y: f64,
+    },
+    MoveToRelative {
+        x: f64,
+        y: f64,
+    },
 }
