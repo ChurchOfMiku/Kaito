@@ -10,6 +10,12 @@ pkgs.mkShell {
     (graphicsmagick.overrideAttrs (
       oldAttrs: rec {
         with_windows_font_dir = "${pkgs.corefonts}/share/fonts/truetype";
+        configureFlags = oldAttrs.configureFlags ++ [
+          "--with-librsvg"
+        ];
+        buildInputs = oldAttrs.buildInputs ++ [
+          pkgs.gnome3.librsvg
+        ];
       }
     ))
   ];

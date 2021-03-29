@@ -25,7 +25,7 @@ use crate::{
         lib::bot::BotMessage,
         state::{get_sandbox_state, LuaAsyncCallback},
     },
-    services::Message,
+    services::{Message, ServiceKind},
 };
 
 const MAX_IMAGE_SIZE: usize = 1024 * 1024 * 4; // Max 4MB
@@ -342,13 +342,37 @@ async fn download_image(url: &url::Url) -> Result<Vec<u8>> {
     Ok(body)
 }
 
-async fn create_image(sender: Sender<LuaAsyncCallback>, data: Vec<u8>) -> Result<Image> {
+async fn create_image(sender: Sender<LuaAsyncCallback>, data: Vec<u8>, svg: bool) -> Result<Image> {
     match tokio::task::spawn_blocking(move || {
         // Ensure the image is valid
         let mut wand = MagickWand::new();
+
+        if svg {
+            wand.set_size(1024, 1024)?;
+            wand.set_format("SVG")?;
+        }
+
         wand.read_image_blob(&data)?;
-        let info = create_image_info(&mut wand)?;
-        drop(wand);
+
+        let (data, info) = if svg {
+            wand.set_image_format("PNG")?;
+            wand.transparent_image(&PixelWand::new().set_color("white"), 255, 32.0)?;
+            wand.resize_image(512, 512, types::FilterTypes::LanczosFilter, 1.0)?;
+            wand.trim_image(1.0)?;
+            let data = wand
+                .write_image_blob()
+                .ok_or_else(|| anyhow::anyhow!("unable to convert svg"))?;
+
+            let info = create_image_info(&mut wand)?;
+            drop(wand);
+
+            (data, info)
+        } else {
+            let info = create_image_info(&mut wand)?;
+            drop(wand);
+
+            (data, info)
+        };
 
         Ok(Image(Arc::new(ImageInner { data, info }), sender))
     })
@@ -458,8 +482,11 @@ pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
         let sender3 = sender2.clone();
 
         // Parse url
-        let url = match url::Url::parse(&url) {
-            Ok(url) => check_url(&url).map_err(|err| LuaError::RuntimeError(err.to_string()))?,
+        let (url, svg) = match url::Url::parse(&url) {
+            Ok(url) => (
+                check_url(&url).map_err(|err| LuaError::RuntimeError(err.to_string()))?,
+                url.path().ends_with(".svg"),
+            ),
             Err(err) => {
                 return Err(LuaError::ExternalError(Arc::new(
                     HttpError::ErrorParsingUrl(err.to_string()),
@@ -505,7 +532,7 @@ pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
                             })
                             .await?;
 
-                        create_image(sender3, body).await
+                        create_image(sender3, body, svg).await
                     }
                     Err(err) => Err(err.into()),
                 }
@@ -542,7 +569,7 @@ pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
                                 match url::Url::parse(text) {
                                     Ok(url) => {
                                         return Ok(Some(
-                                            create_image(sender3, download_image(&url).await?)
+                                            create_image(sender3, download_image(&url).await?, url.path().ends_with(".svg"))
                                                 .await?,
                                         ));
                                     }
@@ -551,6 +578,34 @@ pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
                             }
 
                             if let Some(msg) = msg.as_ref() {
+                                if msg.service_kind() == ServiceKind::Discord {
+                                    lazy_static::lazy_static! {
+                                        static ref RE: regex::Regex = regex::Regex::new(r#"<a:.+?:(\d+)>|<:.+?:(\d+)>"#).unwrap();
+                                    }
+
+                                    if let Some(capture) = RE.captures(&text) {
+                                        if let Some(url) = if let Some(animated_id) = capture.get(1) {
+                                            Some(format!("https://cdn.discordapp.com/emojis/{}.gif?v=1", animated_id.as_str()))
+                                        } else if let Some(id) = capture.get(2) {
+                                            Some(format!("https://cdn.discordapp.com/emojis/{}.png?v=1", id.as_str()))
+                                        } else {
+                                            None
+                                        } {
+                                            if let Ok(image_data) = download_image(&url::Url::parse(&url)?).await {
+                                                return Ok(Some(create_image(sender3, image_data, false).await?));
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if let Some(emoji) = emojis::lookup(text) {
+                                    let code = emoji.as_str().chars().map(|code| format!("{:x}", code as u32)).collect::<Vec<_>>().join("-");
+                                    let url = format!("https://cdnjs.cloudflare.com/ajax/libs/twemoji/13.0.2/svg/{}.svg", code);
+                                    if let Ok(image_data) = download_image(&url::Url::parse(&url)?).await {
+                                        return Ok(Some(create_image(sender3, image_data, true).await?));
+                                    }
+                                }
+
                                 if let Ok(user) = bot
                                     .get_ctx()
                                     .services()
@@ -562,7 +617,7 @@ pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
                                             create_image(
                                                 sender3,
                                                 download_image(&url::Url::parse(avatar.trim())?)
-                                                    .await?,
+                                                    .await?, false,
                                             )
                                             .await?,
                                         ));
@@ -580,7 +635,7 @@ pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
                                         create_image(
                                             sender3,
                                             download_image(&url::Url::parse(&attachment.url)?)
-                                                .await?,
+                                                .await?, attachment.filename.ends_with(".svg")
                                         )
                                         .await?,
                                     ));
@@ -605,6 +660,7 @@ pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
                                                         &attachment.url,
                                                     )?)
                                                     .await?,
+                                                    attachment.filename.ends_with(".svg")
                                                 )
                                                 .await?,
                                             ));
@@ -620,7 +676,7 @@ pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
                                     match url::Url::parse(text) {
                                         Ok(url) => {
                                             return Ok(Some(
-                                                create_image(sender3, download_image(&url).await?)
+                                                create_image(sender3, download_image(&url).await?, url.path().ends_with(".svg"))
                                                     .await?,
                                             ));
                                         }

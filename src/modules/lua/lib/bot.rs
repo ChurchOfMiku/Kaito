@@ -711,6 +711,10 @@ impl BotMessage {
     pub fn attachments(&self) -> &[Arc<Attachment>] {
         &self.0.attachments
     }
+
+    pub fn service_kind(&self) -> ServiceKind {
+        self.0.service
+    }
 }
 
 impl UserData for BotMessage {
