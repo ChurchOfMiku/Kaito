@@ -184,7 +184,7 @@ bot.add_command("tag", {
             callback = function(ctx)
                 local user
 
-                if args.user then
+                if ctx.args.user then
                     user = bot.find_user(ctx.msg.channel, ctx.args.user):await()
                 else
                     user = ctx.msg.author
