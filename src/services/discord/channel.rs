@@ -42,6 +42,25 @@ impl Channel<DiscordService> for DiscordChannel {
         }
     }
 
+    async fn messages(&self, limit: u64, before: Option<u64>) -> Result<Vec<Arc<DiscordMessage>>> {
+        let messages = self
+            .channel
+            .id()
+            .messages(&self.service.cache_and_http().http, |mut ret| {
+                if let Some(before) = before {
+                    ret = ret.before(before);
+                }
+
+                ret.limit(limit)
+            })
+            .await?;
+
+        Ok(messages
+            .into_iter()
+            .map(|msg| Arc::new(DiscordMessage::new(msg, self.service.clone())))
+            .collect())
+    }
+
     async fn send<'a, C>(
         &self,
         content: C,

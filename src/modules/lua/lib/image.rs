@@ -13,14 +13,23 @@ use mlua::{
 };
 use std::{
     net::IpAddr,
+    path::Path,
     sync::{Arc, Mutex},
 };
 use tokio::task::JoinError;
 
-use crate::modules::lua::{
-    http::HttpError,
-    state::{get_sandbox_state, LuaAsyncCallback},
+use crate::{
+    bot::Bot,
+    modules::lua::{
+        http::HttpError,
+        lib::bot::BotMessage,
+        state::{get_sandbox_state, LuaAsyncCallback},
+    },
+    services::Message,
 };
+
+const MAX_IMAGE_SIZE: usize = 1024 * 1024 * 4; // Max 4MB
+const IMAGE_EXTENSIONS: &[&'static str] = &["png", "gif", "jpg", "jpeg"];
 
 macro_rules! magick_enum {
     ($name:ident, $inner:ty, $num_ty:ty, { $($lua_ident:ident => $enum_ident:ident,)+ }) => {
@@ -267,7 +276,90 @@ fn create_image_info<'a>(wand: &mut MagickWand<'a>) -> Result<ImageInfo> {
     })
 }
 
-pub fn lib_image(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
+fn check_url(url: &url::Url) -> Result<String> {
+    match url.scheme() {
+        "http" | "https" => {}
+        s => {
+            return Err(anyhow::anyhow!("unknown scheme: {}", s));
+        }
+    }
+
+    let addrs = match url.socket_addrs(|| Some(if url.scheme() == "https" { 443 } else { 80 })) {
+        Ok(addrs) => addrs,
+        Err(err) => {
+            return Err(anyhow::anyhow!("error resolving hosts: {}", err));
+        }
+    };
+
+    let disallowed_addr = addrs.iter().find(|addr| {
+        let ip = addr.ip();
+        ip.is_loopback()
+            || ip.is_multicast()
+            || ip.is_unspecified()
+            || (match ip {
+                IpAddr::V4(ip) => match ip.octets() {
+                    [10, ..] => true,
+                    [172, b, ..] if b >= 16 && b <= 31 => true,
+                    [192, 168, ..] => true,
+                    _ => false,
+                },
+                IpAddr::V6(_) => false, // IPv6 should be disabled in networking
+            })
+    });
+
+    if let Some(disallowed_addr) = disallowed_addr {
+        return Err(anyhow::anyhow!(
+            "disallowed ip address found: {}",
+            disallowed_addr
+        ));
+    }
+
+    Ok(url.to_string())
+}
+
+async fn download_image(url: &url::Url) -> Result<Vec<u8>> {
+    let client = Client::builder().build::<_, Body>(HttpsConnector::new());
+    let req = Request::builder()
+        .method("GET")
+        .uri(check_url(&url)?)
+        .body(Body::empty())?;
+    let mut res = client.request(req).await?;
+
+    let body = res
+        .body_mut()
+        .map_err(|e: hyper::Error| e.into())
+        .try_fold(Vec::new(), |mut data, chunk| async move {
+            data.extend_from_slice(&chunk);
+
+            if data.len() > MAX_IMAGE_SIZE {
+                return Err(anyhow::anyhow!("max body size limit reached")).into();
+            }
+
+            Ok(data)
+        })
+        .await?;
+
+    Ok(body)
+}
+
+async fn create_image(sender: Sender<LuaAsyncCallback>, data: Vec<u8>) -> Result<Image> {
+    match tokio::task::spawn_blocking(move || {
+        // Ensure the image is valid
+        let mut wand = MagickWand::new();
+        wand.read_image_blob(&data)?;
+        let info = create_image_info(&mut wand)?;
+        drop(wand);
+
+        Ok(Image(Arc::new(ImageInner { data, info }), sender))
+    })
+    .await
+    {
+        Ok(res) => res,
+        Err(err) => Err(err.into()),
+    }
+}
+
+pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -> Result<()> {
     let image = state.create_table()?;
 
     // image.create_draw_buffer
@@ -367,7 +459,7 @@ pub fn lib_image(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
 
         // Parse url
         let url = match url::Url::parse(&url) {
-            Ok(url) => url,
+            Ok(url) => check_url(&url).map_err(|err| LuaError::RuntimeError(err.to_string()))?,
             Err(err) => {
                 return Err(LuaError::ExternalError(Arc::new(
                     HttpError::ErrorParsingUrl(err.to_string()),
@@ -375,51 +467,9 @@ pub fn lib_image(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
             }
         };
 
-        match url.scheme() {
-            "http" | "https" => {}
-            _ => {
-                return Err(LuaError::ExternalError(Arc::new(HttpError::UnknownScheme(
-                    url.scheme().into(),
-                ))));
-            }
-        }
-
-        let addrs = match url.socket_addrs(|| Some(if url.scheme() == "https" { 443 } else { 80 }))
-        {
-            Ok(addrs) => addrs,
-            Err(err) => {
-                return Err(LuaError::ExternalError(Arc::new(
-                    HttpError::ErrorResolvingHosts(err.to_string()),
-                )));
-            }
-        };
-
-        let disallowed_addr = addrs.iter().find(|addr| {
-            let ip = addr.ip();
-            ip.is_loopback()
-                || ip.is_multicast()
-                || ip.is_unspecified()
-                || (match ip {
-                    IpAddr::V4(ip) => match ip.octets() {
-                        [10, ..] => true,
-                        [172, b, ..] if b >= 16 && b <= 31 => true,
-                        [192, 168, ..] => true,
-                        _ => false,
-                    },
-                    IpAddr::V6(_) => false, // IPv6 should be disabled in networking
-                })
-        });
-
-        if let Some(disallowed_addr) = disallowed_addr {
-            return Err(LuaError::ExternalError(Arc::new(
-                HttpError::DisallowedAddress(disallowed_addr.to_string()),
-            )));
-        }
-
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, Body>(https);
 
-        let url = url.to_string();
         let req = match Request::builder()
             .method("GET")
             .uri(url.clone())
@@ -433,7 +483,6 @@ pub fn lib_image(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
             }
         };
 
-        let max_size = 1024 * 1024 * 4; // Max 4MB
         let fut = create_lua_future!(
             state,
             sender2,
@@ -447,30 +496,16 @@ pub fn lib_image(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
                             .try_fold(Vec::new(), |mut data, chunk| async move {
                                 data.extend_from_slice(&chunk);
 
-                                if data.len() > max_size {
+                                if data.len() > MAX_IMAGE_SIZE {
                                     return Err(anyhow::anyhow!("max body size limit reached"))
                                         .into();
                                 }
 
                                 Ok(data)
                             })
-                            .await
-                            .unwrap_or_default();
+                            .await?;
 
-                        match tokio::task::spawn_blocking(move || {
-                            // Ensure the image is valid
-                            let mut wand = MagickWand::new();
-                            wand.read_image_blob(&body)?;
-                            let info = create_image_info(&mut wand)?;
-                            drop(wand);
-
-                            Ok(Image(Arc::new(ImageInner { data: body, info }), sender3))
-                        })
-                        .await
-                        {
-                            Ok(res) => res,
-                            Err(err) => Err(err.into()),
-                        }
+                        create_image(sender3, body).await
                     }
                     Err(err) => Err(err.into()),
                 }
@@ -481,6 +516,130 @@ pub fn lib_image(state: &Lua, sender: Sender<LuaAsyncCallback>) -> Result<()> {
         Ok(fut)
     })?;
     image.set("from_url", from_url_fn)?;
+
+    // image.resolve
+    let sender2 = sender.clone();
+    let resolve_fn = state.create_function(
+        move |state, (msg, text): (Option<BotMessage>, Option<String>)| {
+            if let Some(sandbox_state) = get_sandbox_state(state) {
+                if sandbox_state.limits().images_left_limit() {
+                    return Err(LuaError::RuntimeError("image limit reached".into()));
+                }
+            }
+
+            let sender3 = sender2.clone();
+            let bot = bot.clone();
+            let fut = create_lua_future!(
+                state,
+                sender2,
+                (),
+                async move {
+                    if let Some(text) = text {
+                        let text = text.trim();
+                        if !text.is_empty() {
+                            if text.starts_with("https://") || text.starts_with("http://") {
+                                // Check if it is an url
+                                match url::Url::parse(text) {
+                                    Ok(url) => {
+                                        return Ok(Some(
+                                            create_image(sender3, download_image(&url).await?)
+                                                .await?,
+                                        ));
+                                    }
+                                    Err(_) => {}
+                                };
+                            }
+
+                            if let Some(msg) = msg.as_ref() {
+                                if let Ok(user) = bot
+                                    .get_ctx()
+                                    .services()
+                                    .find_user(msg.channel().id(), text)
+                                    .await
+                                {
+                                    if let Some(avatar) = user.avatar() {
+                                        return Ok(Some(
+                                            create_image(
+                                                sender3,
+                                                download_image(&url::Url::parse(avatar.trim())?)
+                                                    .await?,
+                                            )
+                                            .await?,
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(msg) = msg {
+                        for attachment in msg.attachments() {
+                            if let Some(extension) = Path::new(&attachment.filename).extension() {
+                                if IMAGE_EXTENSIONS.contains(&&*extension.to_string_lossy()) {
+                                    return Ok(Some(
+                                        create_image(
+                                            sender3,
+                                            download_image(&url::Url::parse(&attachment.url)?)
+                                                .await?,
+                                        )
+                                        .await?,
+                                    ));
+                                }
+                            }
+                        }
+
+                        let id = msg.channel().id();
+                        let channel = bot.get_ctx().services().channel(id).await?;
+                        if let Ok(messages) = channel.messages(16, None).await {
+                            for message in messages {
+                                for attachment in message.attachments() {
+                                    if let Some(extension) =
+                                        Path::new(&attachment.filename).extension()
+                                    {
+                                        if IMAGE_EXTENSIONS.contains(&&*extension.to_string_lossy())
+                                        {
+                                            return Ok(Some(
+                                                create_image(
+                                                    sender3,
+                                                    download_image(&url::Url::parse(
+                                                        &attachment.url,
+                                                    )?)
+                                                    .await?,
+                                                )
+                                                .await?,
+                                            ));
+                                        }
+                                    }
+                                }
+
+                                let text = message.content().trim();
+
+                                if !text.is_empty()
+                                    && (text.starts_with("https://") || text.starts_with("http://"))
+                                {
+                                    match url::Url::parse(text) {
+                                        Ok(url) => {
+                                            return Ok(Some(
+                                                create_image(sender3, download_image(&url).await?)
+                                                    .await?,
+                                            ));
+                                        }
+                                        Err(_) => {}
+                                    };
+                                }
+                            }
+                        }
+                    }
+
+                    Ok(None)
+                },
+                |_state, _data: (), res: Result<Option<Image>>| { Ok(res?) }
+            );
+
+            Ok(fut)
+        },
+    )?;
+    image.set("resolve", resolve_fn)?;
 
     image.set("CHANNEL_TYPE", ChannelType::create_table(state)?)?;
     image.set(
@@ -968,7 +1127,6 @@ impl UserData for DrawCommandBuffer {
         draw_method!(methods, "set_stroke_antialias", |antialias|: u32, {
             DrawCommand::SetStrokeAntiAlias(antialias)
         });
-
 
         draw_method!(methods, "set_stroke_color", |color|: String, {
             DrawCommand::SetStrokeColor(color)

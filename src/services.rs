@@ -359,10 +359,10 @@ pub trait Service: 'static + Sized + Send + Sync {
     type Channel: Channel<Self>;
     type Server: Server<Self>;
 
-    type MessageId;
-    type ChannelId;
-    type ServerId;
-    type UserId;
+    type MessageId: Send + Sync;
+    type ChannelId: Send + Sync;
+    type ServerId: Send + Sync;
+    type UserId: Send + Sync;
 
     async fn init(bot: Arc<Bot>, config: Self::ServiceConfig) -> Result<Arc<Self>>;
     async fn unload(&self) -> Result<()>;
@@ -439,6 +439,11 @@ pub trait User<S: Service>: Send + Sync {
 pub trait Channel<S: Service>: Send + Sync {
     fn id(&self) -> ChannelId;
     fn name(&self) -> String;
+    async fn messages(
+        &self,
+        limit: u64,
+        before: Option<S::MessageId>,
+    ) -> Result<Vec<Arc<S::Message>>>;
     async fn send<'a, C>(&self, content: C, settings: MessageSettings) -> Result<Arc<S::Message>>
     where
         Self: Sized,

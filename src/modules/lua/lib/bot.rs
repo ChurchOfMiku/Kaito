@@ -312,6 +312,7 @@ pub fn lib_bot(
                     Arc::new(BotUserInner {
                         name: service_user.name().to_string(),
                         nick: service_user.nick().to_string(),
+                        avatar: service_user.avatar().clone(),
                         id: service_user.id(),
                         restricted,
                     }),
@@ -362,6 +363,7 @@ pub fn lib_bot(
                         Arc::new(BotUserInner {
                             name: service_user.name().to_string(),
                             nick: service_user.nick().to_string(),
+                            avatar: service_user.avatar().clone(),
                             id: service_user.id(),
                             restricted,
                         }),
@@ -705,6 +707,10 @@ impl BotMessage {
     pub fn channel(&self) -> &BotChannel {
         &self.0.channel
     }
+
+    pub fn attachments(&self) -> &[Arc<Attachment>] {
+        &self.0.attachments
+    }
 }
 
 impl UserData for BotMessage {
@@ -941,6 +947,7 @@ impl BotUser {
             Arc::new(BotUserInner {
                 name: service_user.name().to_string(),
                 nick: service_user.nick().to_string(),
+                avatar: service_user.avatar().clone(),
                 id: service_user.id(),
                 restricted,
             }),
@@ -960,6 +967,7 @@ impl BotUser {
 pub struct BotUserInner {
     name: String,
     nick: String,
+    avatar: Option<String>,
     id: UserId,
     restricted: bool,
 }
@@ -972,6 +980,11 @@ impl UserData for BotUser {
                 "id" => Ok(mlua::Value::String(
                     state.create_string(user.0.id.to_str().as_bytes())?,
                 )),
+                "avatar" => Ok(if let Some(avatar) = user.0.avatar.as_ref() {
+                    mlua::Value::String(state.create_string(avatar.as_bytes())?)
+                } else {
+                    mlua::Value::Nil
+                }),
                 "uid" => Ok(mlua::Value::Number(user.1.uid as f64)),
                 "name" => Ok(mlua::Value::String(
                     state.create_string(user.0.name.as_bytes())?,

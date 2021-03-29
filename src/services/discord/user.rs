@@ -9,6 +9,7 @@ pub struct DiscordUser {
     service: Arc<DiscordService>,
     name: String,
     nick: String,
+    avatar: Option<String>,
 }
 
 impl DiscordUser {
@@ -16,6 +17,7 @@ impl DiscordUser {
         DiscordUser {
             name: format!("{}#{:04}", user.name, user.discriminator),
             nick: user.name.clone(),
+            avatar: user.avatar_url(),
             user,
             service,
         }
@@ -36,7 +38,7 @@ impl User<DiscordService> for DiscordUser {
     }
 
     fn avatar(&self) -> &Option<String> {
-        &self.user.avatar
+        &self.avatar
     }
 
     fn bot(&self) -> Option<bool> {

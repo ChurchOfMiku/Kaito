@@ -122,7 +122,7 @@ impl LuaState {
         let lua_root_path = bot.share_path().join("lua");
 
         lib_include(lua_root_path.clone(), &inner)?;
-        lib_image(&inner, async_sender.clone())?;
+        lib_image(&inner, bot.clone(), async_sender.clone())?;
 
         if sandbox {
             let bot_tbl = inner.create_table()?;
