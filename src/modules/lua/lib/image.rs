@@ -715,8 +715,8 @@ impl UserData for Image {
             wand.resample_image(x_resolution, y_resolution, filter.inner(), blur)?
         });
 
-        image_method!(methods, "resize", |(columns, rows, filter, blur)|: (f64, f64, FilterTypes, f64), |wand| {
-            wand.resample_image(columns, rows, filter.inner(), blur)?
+        image_method!(methods, "resize", |(columns, rows, filter, blur)|: (u64, u64, FilterTypes, f64), |wand| {
+            wand.resize_image(columns, rows, filter.inner(), blur)?
         });
 
         image_method!(methods, "roll", |(x_offset, y_offset)|: (i64, i64), |wand| {
