@@ -13,7 +13,10 @@ bot.add_command("tag", {
         local tag = tags.find_tag(ctx.msg.channel.server, ctx.args.tag):await()
 
         if tag then
-            return ctx.msg:reply(ctx.msg.channel:escape_text(tags.exec_tag(ctx.msg, ctx.msg.author, ctx.msg.channel, tag, ctx.extra_args))):await()
+            local text = tags.exec_tag(ctx.msg, ctx.msg.author, ctx.msg.channel, tag, ctx.extra_args)
+            if text ~= "" then
+                return ctx.msg:reply(ctx.msg.channel:escape_text(text)):await()
+            end
         else
             return ctx.msg:reply("error: unknown tag"):await()
         end
