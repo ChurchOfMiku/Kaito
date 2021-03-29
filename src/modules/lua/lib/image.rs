@@ -740,7 +740,7 @@ impl Image {
 }
 
 macro_rules! image_method {
-    ($methods:expr, $name:expr, |$args:pat|: $args_ty:ty, |$wand:ident| $block:block) => {
+    ($methods:expr, $name:expr, $all_frames:tt, |$args:pat|: $args_ty:ty, |$wand:ident| $block:block) => {
         $methods.add_method($name, |state, image, $args: $args_ty| {
             if let Some(sandbox_state) = get_sandbox_state(state) {
                 if sandbox_state.limits().image_operations_left_limit() {
@@ -761,11 +761,18 @@ macro_rules! image_method {
                     let mut $wand = MagickWand::new();
                     $wand.read_image_blob(&data)?;
 
-                    let wand = $block;
+                    let mut data = Vec::new();
+                    let wand = image_method!(__frames, $block, $wand, $all_frames);
 
-                    let data = wand
-                        .write_image_blob()
-                        .ok_or_else(|| anyhow::anyhow!("unable to write image"))?;
+                    wand.reset_iterator();
+
+                    for _ in 0..wand.get_number_images() {
+                        data.append(
+                            &mut wand
+                                .write_image_blob()
+                                .ok_or_else(|| anyhow::anyhow!("unable to write image"))?,
+                        );
+                    }
 
                     let info = create_image_info(wand)?;
 
@@ -777,35 +784,48 @@ macro_rules! image_method {
             Ok(fut)
         });
     };
+    (__frames, $block:block, $wand:ident, true) => {{
+        $wand.reset_iterator();
+
+        for _ in 0..=$wand.get_number_images() {
+            $block;
+            $wand.next_image();
+        }
+
+        &mut $wand
+    }};
+    (__frames, $block:block, $wand:expr, false) => {
+        &mut $block
+    };
 }
 
 impl UserData for Image {
     fn add_methods<'a, M: UserDataMethods<'a, Self>>(methods: &mut M) {
-        image_method!(methods, "blur", |(radius, sigma)|: (f64, f64), |wand| {
+        image_method!(methods, "blur", true, |(radius, sigma)|: (f64, f64), |wand| {
             wand.blur_image(radius, sigma)?
         });
 
-        image_method!(methods, "charcoal", |(radius, sigma)|: (f64, f64), |wand| {
+        image_method!(methods, "charcoal", true, |(radius, sigma)|: (f64, f64), |wand| {
             wand.charcoal_image(radius, sigma)?
         });
 
-        image_method!(methods, "chop", |(width, height, x, y)|: (u64, u64, i64, i64), |wand| {
+        image_method!(methods, "chop", true, |(width, height, x, y)|: (u64, u64, i64, i64), |wand| {
             wand.chop_image(width, height, x, y)?
         });
 
-        image_method!(methods, "colorize", |(colorize, opacity)|: (String, String), |wand| {
+        image_method!(methods, "colorize", true, |(colorize, opacity)|: (String, String), |wand| {
             wand.colorize_image(PixelWand::new().set_color(&colorize), PixelWand::new().set_color(&opacity))?
         });
 
-        image_method!(methods, "composite", |(other_image, operator, x, y)|: (Image, CompositeOperator, i64, i64), |wand| {
+        image_method!(methods, "composite", true, |(other_image, operator, x, y)|: (Image, CompositeOperator, i64, i64), |wand| {
             wand.composite_image(&other_image.get_wand()?, operator.inner(), x, y)?
         });
 
-        image_method!(methods, "crop", |(width, height, x, y)|: (u64, u64, i64, i64), |wand| {
+        image_method!(methods, "crop", true, |(width, height, x, y)|: (u64, u64, i64, i64), |wand| {
             wand.crop_image(width, height, x, y)?
         });
 
-        image_method!(methods, "draw", |draw_commands|: DrawCommandBuffer, |wand| {
+        image_method!(methods, "draw", true, |draw_commands|: DrawCommandBuffer, |wand| {
             let mut draw_wand = &mut DrawingWand::new();
 
             for command in draw_commands.commands.lock().unwrap().drain(..) {
@@ -875,11 +895,11 @@ impl UserData for Image {
             wand.draw_image(&draw_wand)?
         });
 
-        image_method!(methods, "extent", |(width, height, x, y)|: (u64, u64, i64, i64), |wand| {
+        image_method!(methods, "extent", true, |(width, height, x, y)|: (u64, u64, i64, i64), |wand| {
             wand.extent_image(width, height, x, y)?
         });
 
-        image_method!(methods, "flip", |(flip, flop)|: (bool, bool), |wand| {
+        image_method!(methods, "flip", true, |(flip, flop)|: (bool, bool), |wand| {
             if flip && flop {
                 wand.flip_image()?.flop_image()?
             } else if flip {
@@ -891,135 +911,135 @@ impl UserData for Image {
             }
         });
 
-        image_method!(methods, "gamma", |gamma|: f64, |wand| {
+        image_method!(methods, "gamma", true, |gamma|: f64, |wand| {
             wand.gamma_image(gamma)?
         });
 
-        image_method!(methods, "implode", |radius|: f64, |wand| {
+        image_method!(methods, "implode", true, |radius|: f64, |wand| {
             wand.implode_image(radius)?
         });
 
-        image_method!(methods, "morph", |frames|: u64, |wand| {
-            &mut wand.morph_images(frames)
+        image_method!(methods, "morph", false, |frames|: u64, |wand| {
+            wand.morph_images(frames)
         });
 
-        image_method!(methods, "modulate", |(brightness, saturation, hue)|: (f64, f64, f64), |wand| {
+        image_method!(methods, "modulate", true, |(brightness, saturation, hue)|: (f64, f64, f64), |wand| {
             wand.modulate_image(brightness, saturation, hue)?
         });
 
-        image_method!(methods, "negate", |gray|: u32, |wand| {
+        image_method!(methods, "negate", true, |gray|: u32, |wand| {
             wand.negate_image(gray)?
         });
 
-        image_method!(methods, "oil_paint", |radius|: f64, |wand| {
+        image_method!(methods, "oil_paint", true, |radius|: f64, |wand| {
             wand.oil_paint_image(radius)?
         });
 
-        image_method!(methods, "opaque", |(target, fill, fuzz)|: (String, String, f64), |wand| {
+        image_method!(methods, "opaque", true, |(target, fill, fuzz)|: (String, String, f64), |wand| {
             wand.opaque_image(PixelWand::new().set_color(&target), PixelWand::new().set_color(&fill), fuzz)?
         });
 
-        image_method!(methods, "radial_blur", |angle|: f64, |wand| {
+        image_method!(methods, "radial_blur", true, |angle|: f64, |wand| {
             wand.radial_blur_image(angle)?
         });
 
-        image_method!(methods, "reduce_noise", |radius|: f64, |wand| {
+        image_method!(methods, "reduce_noise", true, |radius|: f64, |wand| {
             wand.reduce_noise_image(radius)?
         });
 
-        image_method!(methods, "resample", |(x_resolution, y_resolution, filter, blur)|: (f64, f64, FilterTypes, f64), |wand| {
+        image_method!(methods, "resample", true, |(x_resolution, y_resolution, filter, blur)|: (f64, f64, FilterTypes, f64), |wand| {
             wand.resample_image(x_resolution, y_resolution, filter.inner(), blur)?
         });
 
-        image_method!(methods, "resize", |(columns, rows, filter, blur)|: (u64, u64, FilterTypes, f64), |wand| {
+        image_method!(methods, "resize", true, |(columns, rows, filter, blur)|: (u64, u64, FilterTypes, f64), |wand| {
             wand.resize_image(columns, rows, filter.inner(), blur)?
         });
 
-        image_method!(methods, "roll", |(x_offset, y_offset)|: (i64, i64), |wand| {
+        image_method!(methods, "roll", true, |(x_offset, y_offset)|: (i64, i64), |wand| {
             wand.roll_image(x_offset, y_offset)?
         });
 
-        image_method!(methods, "rotate", |(background, degress)|: (String, f64), |wand| {
+        image_method!(methods, "rotate", true, |(background, degress)|: (String, f64), |wand| {
             wand.rotate_image(PixelWand::new().set_color(&background), degress)?
         });
 
-        image_method!(methods, "sample", |(columns, rows)|: (u64, u64), |wand| {
+        image_method!(methods, "sample", true, |(columns, rows)|: (u64, u64), |wand| {
             wand.sample_image(columns, rows)?
         });
 
-        image_method!(methods, "scale", |(columns, rows)|: (u64, u64), |wand| {
+        image_method!(methods, "scale", true, |(columns, rows)|: (u64, u64), |wand| {
             wand.scale_image(columns, rows)?
         });
 
-        image_method!(methods, "separate_channel", |channel|: ChannelType, |wand| {
+        image_method!(methods, "separate_channel", true, |channel|: ChannelType, |wand| {
             wand.separate_image_channel(channel.inner())?
         });
 
-        image_method!(methods, "set_background", |background|: String, |wand| {
+        image_method!(methods, "set_background", true, |background|: String, |wand| {
             wand.set_image_background_color(PixelWand::new().set_color(&background))?
         });
 
-        image_method!(methods, "sharpen", |(radius, sigma)|: (f64, f64), |wand| {
+        image_method!(methods, "sharpen", true, |(radius, sigma)|: (f64, f64), |wand| {
             wand.sharpen_image(radius, sigma)?
         });
 
-        image_method!(methods, "shave", |(columns, rows)|: (u64, u64), |wand| {
+        image_method!(methods, "shave", true, |(columns, rows)|: (u64, u64), |wand| {
             wand.shave_image(columns, rows)?
         });
 
-        image_method!(methods, "shear", |(background, x_shear, y_shear)|: (String, f64, f64), |wand| {
+        image_method!(methods, "shear", true, |(background, x_shear, y_shear)|: (String, f64, f64), |wand| {
             wand.shear_image(PixelWand::new().set_color(&background), x_shear, y_shear)?
         });
 
-        image_method!(methods, "solarize", |threshold|: f64, |wand| {
+        image_method!(methods, "solarize", true, |threshold|: f64, |wand| {
             wand.solarize_image(threshold)?
         });
 
-        image_method!(methods, "spread", |radius|: f64, |wand| {
+        image_method!(methods, "spread", true, |radius|: f64, |wand| {
             wand.spread_image(radius)?
         });
 
-        image_method!(methods, "swirl", |degrees|: f64, |wand| {
+        image_method!(methods, "swirl", true, |degrees|: f64, |wand| {
             wand.swirl_image(degrees)?
         });
 
-        image_method!(methods, "texture", |texture_image|: Image, |wand| {
-            &mut wand
+        image_method!(methods, "texture", false, |texture_image|: Image, |wand| {
+            wand
                 .texture_image(&texture_image.get_wand()?)
                 .ok_or_else(|| anyhow::anyhow!("error texturing image"))?
         });
 
-        image_method!(methods, "threshold", |threshold|: f64, |wand| {
+        image_method!(methods, "threshold", true, |threshold|: f64, |wand| {
             wand.threshold_image(threshold)?
         });
 
-        image_method!(methods, "threshold_channel", |(channel, threshold)|: (ChannelType, f64), |wand| {
+        image_method!(methods, "threshold_channel", true, |(channel, threshold)|: (ChannelType, f64), |wand| {
             wand.threshold_image_channel(channel.inner(), threshold)?
         });
 
-        image_method!(methods, "tint", |(tint, opacity)|: (String, String), |wand| {
+        image_method!(methods, "tint", true, |(tint, opacity)|: (String, String), |wand| {
             wand.tint_image(PixelWand::new().set_color(&tint), PixelWand::new().set_color(&opacity))?
         });
 
-        image_method!(methods, "transform", |(crop, geometry)|: (String, String), |wand| {
-            &mut wand
+        image_method!(methods, "transform", false, |(crop, geometry)|: (String, String), |wand| {
+            wand
                 .transform_image(&crop, &geometry)
                 .ok_or_else(|| anyhow::anyhow!("error transforming image"))?
         });
 
-        image_method!(methods, "transparent", |(target, opacity, fuzz)|: (String, u8, f64), |wand| {
+        image_method!(methods, "transparent", true, |(target, opacity, fuzz)|: (String, u8, f64), |wand| {
             wand.transparent_image(PixelWand::new().set_color(&target), opacity, fuzz)?
         });
 
-        image_method!(methods, "trim", |trim|: f64, |wand| {
+        image_method!(methods, "trim", true, |trim|: f64, |wand| {
             wand.trim_image(trim)?
         });
 
-        image_method!(methods, "unsharp_mask", |(radius, sigma, amount, threshold)|: (f64, f64, f64, f64), |wand| {
+        image_method!(methods, "unsharp_mask", true, |(radius, sigma, amount, threshold)|: (f64, f64, f64, f64), |wand| {
             wand.unsharp_mask_image(radius, sigma, amount, threshold)?
         });
 
-        image_method!(methods, "wave", |(amplitude, wave_length)|: (f64, f64), |wand| {
+        image_method!(methods, "wave", true, |(amplitude, wave_length)|: (f64, f64), |wand| {
             wand.wave_image(amplitude, wave_length)?
         });
 
