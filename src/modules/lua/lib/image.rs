@@ -644,6 +644,7 @@ impl UserData for Image {
                     DrawCommand::SkewX(degrees) => draw_wand.skew_x(degrees),
                     DrawCommand::SkewY(degrees) => draw_wand.skew_y(degrees),
                     DrawCommand::SetStrokeAntiAlias(aa) => draw_wand.set_stroke_antialias(aa),
+                    DrawCommand::SetStrokeColor(color) => draw_wand.set_stroke_color(PixelWand::new().set_color(&color)),
                     DrawCommand::SetStrokeLineCap(cap) => draw_wand.set_stroke_line_cap(cap.inner()),
                     DrawCommand::SetStrokeLineJoin(join) => draw_wand.set_stroke_line_join(join.inner()),
                     DrawCommand::SetStrokeWidth(width) => draw_wand.set_stroke_width(width),
@@ -968,6 +969,11 @@ impl UserData for DrawCommandBuffer {
             DrawCommand::SetStrokeAntiAlias(antialias)
         });
 
+
+        draw_method!(methods, "set_stroke_color", |color|: String, {
+            DrawCommand::SetStrokeColor(color)
+        });
+
         draw_method!(methods, "set_stroke_line_cap", |line_cap|: LineCap, {
             DrawCommand::SetStrokeLineCap(line_cap)
         });
@@ -976,7 +982,7 @@ impl UserData for DrawCommandBuffer {
             DrawCommand::SetStrokeLineJoin(line_join)
         });
 
-        draw_method!(methods, "set_stroke_line_width", |width|: f64, {
+        draw_method!(methods, "set_stroke_width", |width|: f64, {
             DrawCommand::SetStrokeWidth(width)
         });
 
@@ -1090,6 +1096,7 @@ enum DrawCommand {
     SkewX(f64),
     SkewY(f64),
     SetStrokeAntiAlias(u32),
+    SetStrokeColor(String),
     SetStrokeLineCap(LineCap),
     SetStrokeLineJoin(LineJoin),
     SetStrokeWidth(f64),
