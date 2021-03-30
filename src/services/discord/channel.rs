@@ -92,7 +92,14 @@ impl Channel<DiscordService> for DiscordChannel {
                 });
 
                 if !content.is_empty() {
-                    m = m.content(content);
+                    if content.chars().count() > 2000 {
+                        m = m.add_file(AttachmentType::Bytes {
+                            data: std::borrow::Cow::from(content.as_bytes().to_owned()),
+                            filename: "message.txt".into(),
+                        });
+                    } else {
+                        m = m.content(content);
+                    }
                 }
 
                 if let Some(embed) = settings.embed {
