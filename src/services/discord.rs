@@ -4,6 +4,7 @@ use async_mutex::Mutex as AsyncMutex;
 use futures::future::{AbortHandle, Abortable};
 use lru::LruCache;
 use serenity::{
+    client::Context,
     http::CacheHttp,
     model::{
         channel::{Message, Reaction, ReactionType},
@@ -14,6 +15,7 @@ use serenity::{
     prelude::*,
     CacheAndHttp,
 };
+use songbird::SerenityInit;
 use std::{
     str::FromStr,
     sync::{Arc, Mutex},
@@ -25,8 +27,9 @@ mod channel;
 mod message;
 mod server;
 mod user;
+mod voice;
 
-use self::user::DiscordUser;
+use self::{user::DiscordUser, voice::DiscordVoiceConnection};
 
 use super::{Channel, Service, ServiceFeatures, ServiceKind};
 use crate::bot::Bot;
@@ -34,6 +37,7 @@ use crate::bot::Bot;
 pub struct DiscordService {
     bot: Arc<Bot>,
     cache_and_http: ArcSwapOption<CacheAndHttp>,
+    context: ArcSwapOption<Context>,
     ready_abort: Mutex<Option<AbortHandle>>,
     user_cache: AsyncMutex<LruCache<u64, Arc<DiscordUser>>>,
 }
@@ -81,10 +85,12 @@ impl SerenityHandler {
 
 #[async_trait]
 impl EventHandler for SerenityHandler {
-    async fn ready(&self, _: Context, ready: Ready) {
+    async fn ready(&self, context: Context, ready: Ready) {
         if let Some(abort_handle) = self.service.ready_abort.lock().unwrap().take() {
             abort_handle.abort();
         }
+
+        self.service.context.store(Some(Arc::new(context)));
 
         println!(
             "{}#{:04} is connected!",
@@ -160,6 +166,7 @@ impl Service for DiscordService {
     type User = user::DiscordUser;
     type Channel = channel::DiscordChannel;
     type Server = server::DiscordServer;
+    type VoiceConnection = voice::DiscordVoiceConnection;
 
     type MessageId = u64;
     type ChannelId = u64;
@@ -170,6 +177,7 @@ impl Service for DiscordService {
         let service = Arc::new(DiscordService {
             bot,
             cache_and_http: ArcSwapOption::new(None),
+            context: ArcSwapOption::new(None),
             ready_abort: Default::default(),
             user_cache: AsyncMutex::new(LruCache::new(64)),
         });
@@ -180,6 +188,7 @@ impl Service for DiscordService {
         loop {
             match Client::builder(&config.token)
                 .event_handler(SerenityHandler::new(service.clone()))
+                .register_songbird()
                 .await
             {
                 Ok(c) => break client = c,
@@ -277,6 +286,15 @@ impl Service for DiscordService {
         )))
     }
 
+    async fn server(self: &Arc<Self>, id: Self::ServerId) -> Result<Arc<Self::Server>> {
+        let server = match self.cache_and_http().cache.guild(id).await {
+            Some(server) => server,
+            None => return Err(anyhow::anyhow!("error getting server")),
+        };
+
+        Ok(Arc::new(server::DiscordServer::new(server, self.clone())))
+    }
+
     async fn channel(self: &Arc<Self>, id: Self::ChannelId) -> Result<Arc<Self::Channel>> {
         let channel = match self.cache_and_http().cache.channel(id).await {
             Some(channel) => channel,
@@ -354,6 +372,23 @@ impl Service for DiscordService {
 
         Ok(())
     }
+
+    async fn join_voice(
+        &self,
+        server_id: u64,
+        channel_id: u64,
+    ) -> Result<Arc<DiscordVoiceConnection>> {
+        let ctx = self.get_ctx()?;
+        let manager = songbird::get(&ctx)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("unable to get songbird manager"))?;
+
+        let (call, _) = manager.join(server_id, channel_id).await;
+
+        Ok(Arc::new(DiscordVoiceConnection::new(
+            server_id, channel_id, call,
+        )))
+    }
 }
 
 impl DiscordService {
@@ -371,6 +406,14 @@ impl DiscordService {
             channel,
             self.clone(),
         )))
+    }
+
+    fn get_ctx(&self) -> Result<Arc<Context>> {
+        if let Some(ctx) = self.context.load().as_ref() {
+            Ok(ctx.clone())
+        } else {
+            Err(anyhow::anyhow!("error getting discord context"))
+        }
     }
 }
 

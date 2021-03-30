@@ -106,6 +106,11 @@ function bot.bold_block(channel, content)
     return a .. content .. a
 end
 
+function bot.bold_itallic_block(channel, content)
+    local a = channel:supports_feature(bot.FEATURES.Markdown) and "***" or ""
+    return a .. content .. a
+end
+
 function bot.help(msg, cmd)
     local usage_options = ""
     local usage_arguments = ""

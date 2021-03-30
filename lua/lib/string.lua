@@ -56,3 +56,7 @@ function string.plural(num)
 		return ""
 	end
 end
+
+function string.starts_with(str, start)
+	return string.sub(str, 1, #start) == start
+end

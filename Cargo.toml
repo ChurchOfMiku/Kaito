@@ -30,6 +30,7 @@ serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0.64"
 serenity = { version = "0.10", default-features = false, features = ["client", "cache", "gateway", "rustls_backend", "model"] }
+songbird = "0.1.5"
 thiserror = "1.0"
 toml = "0.5"
 sqlx = { version = "0.5.1", features = ["sqlite", "runtime-async-std-rustls"] }

@@ -982,7 +982,7 @@ impl UserData for BotUser {
             MetaMethod::Index,
             |state, user, index: String| match index.as_str() {
                 "id" => Ok(mlua::Value::String(
-                    state.create_string(user.0.id.to_str().as_bytes())?,
+                    state.create_string(user.0.id.to_short_str().as_bytes())?,
                 )),
                 "avatar" => Ok(if let Some(avatar) = user.0.avatar.as_ref() {
                     mlua::Value::String(state.create_string(avatar.as_bytes())?)

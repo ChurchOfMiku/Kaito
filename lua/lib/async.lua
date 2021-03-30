@@ -191,4 +191,6 @@ function async.spawn(fn)
     local thread_id = async.gen_thread_id()
 
     debug.getregistry()["__ASYNC_THREADS"][thread_id] = thread
+
+    return thread
 end

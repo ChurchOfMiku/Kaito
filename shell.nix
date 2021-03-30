@@ -6,7 +6,10 @@ pkgs.mkShell {
     lua5_4
     openssl
     sqlite
+    libopus
     libwebp
+    ffmpeg
+    youtube-dl
     (graphicsmagick.overrideAttrs (
       oldAttrs: rec {
         with_windows_font_dir = "${pkgs.corefonts}/share/fonts/truetype";

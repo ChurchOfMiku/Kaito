@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 pub mod discord;
 
@@ -192,6 +192,56 @@ macro_rules! services {
                 }
             }
 
+            pub async fn server(&self, server_id: ServerId) -> Result<Arc<dyn Server<impl Service>>> {
+                match server_id {
+                    $(
+                        ServerId::$service_module_ident(id) => {
+                            let server: Arc<<$service as Service>::Server> = self.$service_ident.as_ref()
+                            .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                            .service()
+                            .server(id)
+                            .await?;
+
+                            Ok(server)
+                        }
+                    ),+
+                }
+            }
+
+            pub async fn voice_user_channel(&self, server_id: ServerId, user_id: UserId) -> Result<Option<ChannelId>> {
+                match (server_id, user_id) {
+                    $(
+                        (ServerId::$service_module_ident(server_id), UserId::$service_module_ident(user_id)) => {
+                            let server: Arc<<$service as Service>::Server> = self.$service_ident.as_ref()
+                                .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                                .service()
+                                .server(server_id)
+                                .await?;
+
+                            server.voice_user_channel(user_id).await
+                        },
+                    )+
+                    _ => Err(anyhow::anyhow!("server id and user id does not belong to the same service"))
+                }
+            }
+
+            pub async fn voice_channel_users(&self, server_id: ServerId, channel_id: ChannelId) -> Result<Vec<UserId>> {
+                match (server_id, channel_id) {
+                    $(
+                        (ServerId::$service_module_ident(server_id), ChannelId::$service_module_ident(channel_id)) => {
+                            let server: Arc<<$service as Service>::Server> = self.$service_ident.as_ref()
+                                .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                                .service()
+                                .server(server_id)
+                                .await?;
+
+                            server.voice_channel_users(channel_id).await
+                        },
+                    )+
+                    _ => Err(anyhow::anyhow!("server id and user id does not belong to the same service"))
+                }
+            }
+
             #[allow(unreachable_patterns)]
             pub async fn message(&self, channel_id: ChannelId, message_id: MessageId) -> Result<Arc<dyn Message<impl Service>>> {
                 match (channel_id, message_id) {
@@ -267,6 +317,24 @@ macro_rules! services {
                                 .react(channel_id, message_id, reaction).await
                         }
                     ),+
+                }
+            }
+
+            #[allow(unreachable_patterns)]
+            pub async fn join_voice(&self, server_id: ServerId, channel_id: ChannelId) -> Result<Arc<dyn VoiceConnection<impl Service>>> {
+                match (server_id, channel_id) {
+                    $(
+                        (ServerId::$service_module_ident(server_id), ChannelId::$service_module_ident(channel_id)) => {
+                            let voice_connection: Arc<<$service as Service>::VoiceConnection> = self.$service_ident.as_ref()
+                            .ok_or(anyhow!("service {} has not been started", stringify!($service_module_ident)))?
+                            .service()
+                            .join_voice(server_id, channel_id)
+                            .await?;
+
+                            Ok(voice_connection)
+                        },
+                    )+
+                    _ => Err(anyhow::anyhow!("server id and channel id does not belong to the same service"))
                 }
             }
 
@@ -358,6 +426,7 @@ pub trait Service: 'static + Sized + Send + Sync {
     type User: User<Self>;
     type Channel: Channel<Self>;
     type Server: Server<Self>;
+    type VoiceConnection: VoiceConnection<Self>;
 
     type MessageId: Send + Sync;
     type ChannelId: Send + Sync;
@@ -373,6 +442,7 @@ pub trait Service: 'static + Sized + Send + Sync {
         channel_id: Self::ChannelId,
         id: Self::MessageId,
     ) -> Result<Arc<Self::Message>>;
+    async fn server(self: &Arc<Self>, id: Self::ServerId) -> Result<Arc<Self::Server>>;
     async fn channel(self: &Arc<Self>, id: Self::ChannelId) -> Result<Arc<Self::Channel>>;
     async fn user(self: &Arc<Self>, get_user: Self::UserId) -> Result<Arc<Self::User>>;
     async fn find_user(
@@ -387,6 +457,12 @@ pub trait Service: 'static + Sized + Send + Sync {
         msg_id: Self::MessageId,
         reaction: String,
     ) -> Result<()>;
+
+    async fn join_voice(
+        &self,
+        server_id: Self::ChannelId,
+        channel_id: Self::ChannelId,
+    ) -> Result<Arc<Self::VoiceConnection>>;
 
     fn kind(&self) -> ServiceKind {
         Self::KIND
@@ -453,10 +529,96 @@ pub trait Channel<S: Service>: Send + Sync {
     fn service(&self) -> &Arc<S>;
 }
 
+#[async_trait]
 pub trait Server<S: Service>: Send + Sync {
     fn id(&self) -> ServerId;
     fn name(&self) -> &str;
     fn service(&self) -> &Arc<S>;
+    async fn voice_user_channel(&self, user: S::UserId) -> Result<Option<ChannelId>>;
+    async fn voice_channel_users(&self, channel: S::ChannelId) -> Result<Vec<UserId>>;
+}
+
+#[async_trait]
+pub trait VoiceConnection<S: Service>: Send + Sync {
+    fn channel_id(&self) -> ChannelId;
+    fn server_id(&self) -> ServerId;
+
+    async fn position(&self) -> Option<Duration>;
+    async fn length(&self) -> Option<Duration>;
+    async fn playing(&self) -> bool;
+    async fn connected(&self) -> bool;
+
+    async fn disconnect(&self) -> Result<()>;
+    async fn set_volume(&self, volume: f32);
+    async fn play(&self, url: &str, seek: Option<Duration>) -> Result<()>;
+    async fn stop(&self) -> Result<()>;
+}
+
+#[async_trait]
+pub trait VoiceConnectionAbstract: Send + Sync {
+    fn channel_id(&self) -> ChannelId;
+    fn server_id(&self) -> ServerId;
+
+    async fn position(&self) -> Option<Duration>;
+    async fn length(&self) -> Option<Duration>;
+    async fn playing(&self) -> bool;
+    async fn connected(&self) -> bool;
+
+    async fn disconnect(&self) -> Result<()>;
+    async fn set_volume(&self, volume: f32);
+    async fn play(&self, url: &str, seek: Option<Duration>) -> Result<()>;
+    async fn stop(&self) -> Result<()>;
+}
+
+#[async_trait]
+impl<S> VoiceConnectionAbstract for Arc<dyn VoiceConnection<S>>
+where
+    S: Service,
+{
+    fn channel_id(&self) -> ChannelId {
+        let inner: &dyn VoiceConnection<S> = self.as_ref();
+        inner.channel_id()
+    }
+
+    fn server_id(&self) -> ServerId {
+        let inner: &dyn VoiceConnection<S> = self.as_ref();
+        inner.server_id()
+    }
+
+    async fn position(&self) -> Option<Duration> {
+        let inner: &dyn VoiceConnection<S> = self.as_ref();
+        inner.position().await
+    }
+    async fn length(&self) -> Option<Duration> {
+        let inner: &dyn VoiceConnection<S> = self.as_ref();
+        inner.length().await
+    }
+    async fn playing(&self) -> bool {
+        let inner: &dyn VoiceConnection<S> = self.as_ref();
+        inner.playing().await
+    }
+    async fn connected(&self) -> bool {
+        let inner: &dyn VoiceConnection<S> = self.as_ref();
+        inner.connected().await
+    }
+
+    async fn disconnect(&self) -> Result<()> {
+        let inner: &dyn VoiceConnection<S> = self.as_ref();
+        inner.disconnect().await
+    }
+
+    async fn set_volume(&self, volume: f32) {
+        let inner: &dyn VoiceConnection<S> = self.as_ref();
+        inner.set_volume(volume).await
+    }
+    async fn play(&self, url: &str, seek: Option<Duration>) -> Result<()> {
+        let inner: &dyn VoiceConnection<S> = self.as_ref();
+        inner.play(url, seek).await
+    }
+    async fn stop(&self) -> Result<()> {
+        let inner: &dyn VoiceConnection<S> = self.as_ref();
+        inner.stop().await
+    }
 }
 
 pub struct ServiceWrapper<S: Service> {
