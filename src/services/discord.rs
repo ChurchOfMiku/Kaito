@@ -102,14 +102,16 @@ impl EventHandler for SerenityHandler {
         _ctx: Context,
         old: Option<Message>,
         new: Option<Message>,
-        _event: MessageUpdateEvent,
+        event: MessageUpdateEvent,
     ) {
-        if let Some(new) = new {
-            let msg = Arc::new(message::DiscordMessage::new(new, self.service.clone()));
-            let old_msg = old.map(|msg| {
-                Arc::new(message::DiscordMessage::new(msg, self.service.clone())) as Arc<_>
-            });
-            self.service.bot.message_update(msg, old_msg).await;
+        if event.content.is_some() {
+            if let Some(new) = new {
+                let msg = Arc::new(message::DiscordMessage::new(new, self.service.clone()));
+                let old_msg = old.map(|msg| {
+                    Arc::new(message::DiscordMessage::new(msg, self.service.clone())) as Arc<_>
+                });
+                self.service.bot.message_update(msg, old_msg).await;
+            }
         }
     }
 
