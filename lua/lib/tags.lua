@@ -105,7 +105,7 @@ function tags.exec_tag(msg, user, channel, tag, extra_args)
                 if tags.SCRIPTED_TAGS[tag_part.tag] then
                     out = out .. tags.SCRIPTED_TAGS[tag_part.tag].fn(ctx, tag_part.value)
                 else
-                    out = out .. "{" .. tag_part.var .. ":" .. tag_part.value .. "}"
+                    out = out .. "{" .. tag_part.tag .. ":" .. tag_part.value .. "}"
                 end
             elseif tag_part.codeblock then
                 if tags.SCRIPTED_TAGS[tag_part.codeblock] then
