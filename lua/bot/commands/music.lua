@@ -104,12 +104,12 @@ bot.add_command("music", {
                 local connection, err_msg = bot.voice.get_connection(ctx.msg, true)
                 if err_msg then return err_msg end
                 if not connection then
-                    return msg:reply("error: no active voice connection was found"):await()
+                    return ctx.msg:reply("error: no active voice connection was found"):await()
                 end
 
                 if not ctx.args.force or not bot.has_role_or_higher("admin", ctx.msg.author.role) then
                     if not connection:idle() then
-                        return msg:reply("error: the voice connection is still in use"):await()
+                        return ctx.msg:reply("error: the voice connection is still in use"):await()
                     end
                 end
 
@@ -131,18 +131,18 @@ bot.add_command("music", {
                 local connection, err_msg = bot.voice.get_connection(ctx.msg, true)
                 if err_msg then return err_msg end
                 if not connection then
-                    return msg:reply("error: no active voice connection was found"):await()
+                    return ctx.msg:reply("error: no active voice connection was found"):await()
                 end
 
                 local volume = tonumber(ctx.args.volume)
 
                 if not volume or 0 > volume then
-                    return msg:reply("error: the volume must be a number over 0"):await()
+                    return ctx.msg:reply("error: the volume must be a number over 0"):await()
                 end
 
                 connection.conn:disconnect():await()
             end,
         }),]]
-        
+
     }
 })
