@@ -365,13 +365,18 @@ impl LuaModule {
                             let mut lines =
                                 out.split('\n').map(|l| l.to_string()).collect::<Vec<_>>();
 
-                            let lines_left = sandbox_state.limits.lines_left();
-
-                            if lines_left > 0 {
+                            if out.chars().count() > 2000 && buffer.is_empty() {
                                 buffer.append(&mut lines);
-                                sandbox_state.limits.set_lines_left(lines_left - 1);
                             } else {
-                                aborting = Some("error: too many lines has been output, aborting");
+                                let lines_left = sandbox_state.limits.lines_left();
+
+                                if lines_left > 0 {
+                                    buffer.append(&mut lines);
+                                    sandbox_state.limits.set_lines_left(lines_left - 1);
+                                } else {
+                                    aborting =
+                                        Some("error: too many lines has been output, aborting");
+                                }
                             }
                         }
                     }
@@ -446,7 +451,17 @@ impl LuaModule {
 
                     let mut characters_left = sandbox_state.limits.characters_left();
 
-                    let mut lines = buffer.drain(..).peekable();
+                    let mut lines = buffer.drain(..).collect::<Vec<_>>();
+
+                    if !has_messaged {
+                        let joined = lines.join("\n");
+                        if joined.chars().count() > 2000 {
+                            out.push_str(&escape_untrusted_text(msg.service().kind(), joined));
+                            lines.clear();
+                        }
+                    }
+
+                    let mut lines = lines.into_iter().peekable();
                     while let Some(line) = lines.next() {
                         let len = line.len() as u64;
 
