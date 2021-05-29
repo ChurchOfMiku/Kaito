@@ -21,7 +21,7 @@ pkgs.mkShell {
   ];
 
   shellHook = ''
-    export LIBCLANG_PATH="${pkgs.llvmPackages.libclang}/lib"
+    export LIBCLANG_PATH="${pkgs.llvmPackages.libclang.lib}/lib"
     export BINDGEN_EXTRA_CLANG_ARGS="-I${pkgs.stdenv.cc.libc}/include"
   '';
 }
