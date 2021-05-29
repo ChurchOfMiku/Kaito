@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 mod lua;
+mod utils;
 
 use crate::{
     bot::Bot,
@@ -78,7 +79,7 @@ macro_rules! modules_loader {
                 match name {
                     $(
                         <$module>::ID => Some(self.$module_ident.module().settings().clone() as Arc<_>),
-                    ),+
+                    )+
                     _ => None
                 }
             }
@@ -175,10 +176,12 @@ impl<M: Module> ModuleWrapper<M> {
 
 pub enum ModuleKind {
     Lua,
+    Utils,
 }
 
 modules_loader! {
     Modules,
 
-    lua => (lua::LuaModule, ())
+    lua => (lua::LuaModule, ()),
+    utils => (utils::UtilsModule, ())
 }
