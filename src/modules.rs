@@ -32,9 +32,13 @@ macro_rules! modules_loader {
             pub async fn message(&self, msg: Arc<dyn Message<impl Service>>) {
                 $(
                     if self.$module_ident.is_enabled() {
-                        if let Err(err) = self.$module_ident.module().message(msg.clone()).await {
-                            println!("error during executing module {}: {}", self.$module_ident.module().name(), err.to_string())
-                        };
+                        let module = self.$module_ident.module().clone();
+                        let msg = msg.clone();
+                        tokio::spawn(async move {
+                            if let Err(err) = module.message(msg).await {
+                                println!("error during executing module {}: {}", module.name(), err.to_string())
+                            }
+                        });
                     }
                 )+
             }
