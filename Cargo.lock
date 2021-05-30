@@ -1316,6 +1316,7 @@ dependencies = [
  "mlua",
  "once_cell",
  "paste",
+ "rand 0.8.3",
  "regex",
  "serde",
  "serde_derive",
