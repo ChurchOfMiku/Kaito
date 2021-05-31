@@ -5,8 +5,8 @@ hooks.add("message", "sed", function(msg)
         return
     end
 
-    local find_g, replace = string.match(msg.content, "^sed/(.*)/(.*)/g$")
-    local find, replace2 = string.match(msg.content, "^sed/(.*)/(.*)/?$")
+    local find_g, replace = string.match(msg.content, "^sed/(.-)/(.-)/g$")
+    local find, replace2 = string.match(msg.content, "^sed/(.-)/(.-)/?$")
     local replace = replace or replace2
 
     if find_g or find then
