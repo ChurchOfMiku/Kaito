@@ -28,12 +28,11 @@ bot.add_command("markov", {
     
             local res = http.fetch("http://127.0.0.1:3000/markov", { body = input, stream = true }):await()
             local reply
-            local body = res
     
-            while body.next_body do
-                body = body.next_body:await()
+            while res.next_body do
+                res = res.next_body:await()
     
-                if not body then
+                if not res then
                     if reply and ctx.msg.channel:supports_feature(bot.FEATURES.React) then
                         reply:react("✅")
                     end
@@ -42,9 +41,13 @@ bot.add_command("markov", {
                 end
     
                 if reply then
-                    reply:edit(ctx.msg.channel:escape_text(body.body)):await()
+                    local succ, _ = pcall(function()
+                        reply:edit(ctx.msg.channel:escape_text(res.body)):await()
+                    end)
+
+                    if not succ then break end
                 else
-                    reply = ctx.msg.channel:send(ctx.msg.channel:escape_text(body.body)):await()
+                    reply = ctx.msg.channel:send(ctx.msg.channel:escape_text(res.body)):await()
                     bot.add_command_history(ctx.msg, reply)
                 end
             end
