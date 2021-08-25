@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossbeam::channel::Sender;
-use mlua::{prelude::*, Lua, MetaMethod, Table, UserData, UserDataMethods};
+use mlua::{prelude::*, Lua, MetaMethod, UserData, UserDataMethods};
 use std::{process::Output, sync::Arc, time::Duration};
 
 use crate::{

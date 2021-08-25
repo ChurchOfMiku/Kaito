@@ -4,8 +4,8 @@ use tokio::sync::Mutex;
 
 use songbird::{
     input::{Input, Restartable},
-    tracks::{PlayMode, TrackHandle, TrackState},
-    Bitrate, Call,
+    tracks::{PlayMode, TrackHandle},
+    driver::Bitrate, Call,
 };
 
 use crate::services::{ChannelId, ServerId, VoiceConnection};
