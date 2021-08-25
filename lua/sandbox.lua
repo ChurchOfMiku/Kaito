@@ -2,6 +2,9 @@ sandbox = sandbox or {tasks = {}}
 
 include("./lib/async.lua")
 json = include("./lib/json.lua")
+Lru = include("./lib/lru.lua")
+RingBuffer = include("./lib/ring_buffer.lua")
+include("./lib/string.lua")
 
 include("./sandbox/utils.lua")
 include("./sandbox/env.lua")
@@ -99,6 +102,9 @@ local function update_env(fenv, state)
         return json.encode(data)
     end
     sandbox.utils.setfenv(fenv.json.encode, fenv)
+
+    fenv.Lru = sandbox.utils.deepcopy(Lru)
+    fenv.RingBuffer = sandbox.utils.deepcopy(RingBuffer)
 
     local sandbox = sandbox
     fenv.print_table = function(tbl)
