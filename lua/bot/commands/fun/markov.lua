@@ -26,7 +26,7 @@ bot.add_command("markov", {
     
             ctx.msg.channel:send_typing()
     
-            local res = http.fetch("http://127.0.0.1:3000/markov", { body = input, stream = true }):await()
+            local res = http.fetch("http://127.0.0.1:3000/markov?channel=" .. ctx.msg.channel.id .. "&server=" .. ctx.msg.channel.server.id, { body = input, stream = true }):await()
             local reply
     
             while res.next_body do
