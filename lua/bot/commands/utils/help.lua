@@ -42,12 +42,12 @@ bot.add_command("help", {
                 function(ctx)
                     return {
                         content = string.trim_lines([[
-                            Nya!~ OoOh~wOoh~♪ (ﾉ> ◇ <)ﾉ♪♪♪
+                            (ﾉ> ◇ <)ﾉ♪♪♪
                             
-                            TL;DR Kaito uses shell style command parsing where spaces seperates the arguments in a command.
+                            In short Kaito uses shell style command parsing where spaces seperates the arguments in a command.
                             
-                            The help command can be navigated by using the page number as the first argument for help command directly, or by using reactions if the service supports it.
-                            Additionally the --help flag can be used on any command to see its subcommands and arguments.]])
+                            The help command can be navigated by using the page number as the first argument passed to the command, or by using reactions if the service supports it.
+                            Additionally, the --help flag may be used on any command to see its subcommands, options and arguments.]])
                     }
                 end
             },
