@@ -27,6 +27,8 @@ settings! {
     }
 }
 
+pub static IMAGE_EXTENSIONS: &[&'static str] = &[".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
+
 #[async_trait]
 impl Module for UtilsModule {
     const KIND: ModuleKind = ModuleKind::Utils;
@@ -103,11 +105,41 @@ impl Module for UtilsModule {
                 let mut attachment = None;
 
                 for (service, status_match) in matches {
-                    if service.should_download() {
-                        if attachment.is_some() {
-                            continue;
-                        }
+                    let media_url = status_match.get(0).unwrap().as_str();
+                    let should_download = service.should_download();
 
+                    let output = tokio::process::Command::new("youtube-dl")
+                        .arg("-g")
+                        .arg("-f")
+                        .arg("best")
+                        .arg("--no-warnings")
+                        .arg(media_url)
+                        .output()
+                        .await;
+
+                    match output {
+                        Ok(output) => {
+                            let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+                            // Drop converting images
+                            let is_image = IMAGE_EXTENSIONS.iter().any(|ext| url.ends_with(ext));
+                            if is_image {
+                                continue;
+                            }
+
+                            // Let the next section download the media instead since we cannot get a viewable direct link to the media
+                            if !should_download {
+                                if !url.is_empty() {
+                                    out.push(url);
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            println!("Error from youtube-dl url extraction: {}", err.to_string())
+                        }
+                    }
+
+                    if should_download {
                         let name: String = rand::thread_rng()
                             .sample_iter(&distributions::Alphanumeric)
                             .take(6)
@@ -119,12 +151,12 @@ impl Module for UtilsModule {
                         // TODO: Move to pipeing to stdout when youtube-dl can support do it after muxing
                         tokio::process::Command::new("youtube-dl")
                                 .args(&[
-                                    "-f", "bestvideo[filesize<8MB]+bestaudio[filesize<2MB]/best/bestvideo+bestaudio",
+                                    "-f", "bestvideo[filesize<6MB]+bestaudio[filesize<2MB]/best/bestvideo+bestaudio",
                                     "--merge-output-format", "mp4",
                                     "--ignore-config",
                                     "--no-playlist",
                                     "--no-warnings",
-                                    status_match.get(0).unwrap().as_str(),
+                                    media_url,
                                     "-o", &out_path.to_string_lossy()
                                     ])
                                 .output().await?;
@@ -132,29 +164,6 @@ impl Module for UtilsModule {
                         if out_path.exists() {
                             attachment = Some(fs::read(&out_path).await?);
                             fs::remove_file(&out_path).await?;
-                        }
-                    } else {
-                        let output = tokio::process::Command::new("youtube-dl")
-                            .arg("-g")
-                            .arg("-f")
-                            .arg("best")
-                            .arg("--no-warnings")
-                            .arg(status_match.get(0).unwrap().as_str())
-                            .output()
-                            .await;
-
-                        match output {
-                            Ok(output) => {
-                                //println!("{}", String::from_utf8_lossy(&output.stderr).to_string());
-                                let url = String::from_utf8_lossy(&output.stdout).to_string();
-                                if !url.is_empty() {
-                                    out.push(url);
-                                }
-                            }
-                            Err(err) => println!(
-                                "Error from youtube-dl twitter extraction: {}",
-                                err.to_string()
-                            ),
                         }
                     }
                 }

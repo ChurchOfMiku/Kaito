@@ -3,9 +3,10 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 use songbird::{
+    driver::Bitrate,
     input::{Input, Restartable},
     tracks::{PlayMode, TrackHandle},
-    driver::Bitrate, Call,
+    Call,
 };
 
 use crate::services::{ChannelId, ServerId, VoiceConnection};
