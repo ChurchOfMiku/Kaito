@@ -277,7 +277,7 @@ impl LuaState {
                 message_deletions_left: AtomicU64::new(2),
                 images_left: AtomicU64::new(4),
                 image_operations_left: AtomicU64::new(16),
-                instructions: 262144,
+                instructions: 8388608,
             },
             http_rate_limiter: self.http_rate_limiter.clone(),
         }));
