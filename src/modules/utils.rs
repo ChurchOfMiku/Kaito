@@ -52,7 +52,7 @@ impl Module for UtilsModule {
 
     async fn message(&self, msg: Arc<dyn Message<impl Service>>) -> Result<()> {
         lazy_static::lazy_static! {
-            static ref REDDIT_RE: regex::Regex = regex::Regex::new(r#"https?://(?:old.|www.)?reddit.com/.+(?: )?"#).unwrap();
+            static ref REDDIT_RE: regex::Regex = regex::Regex::new(r#"https?://(?:(?:old.|www.)?reddit.com|v.redd.it)/.+(?: )?"#).unwrap();
             static ref TIKTOK_RE: regex::Regex = regex::Regex::new(r#"https?://(?:www.|vm.)?tiktok.com/.+(?: )?"#).unwrap();
             static ref TWITTER_RE: regex::Regex = regex::Regex::new(r#"https?://(?:www.)?twitter.com/.+/status(?:es)?/(\d+)(?:.+ )?"#).unwrap();
         }
