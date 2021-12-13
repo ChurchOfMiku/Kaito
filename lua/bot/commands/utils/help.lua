@@ -23,7 +23,7 @@ bot.add_command("help", {
         table.sort(cmds, function(a, b) return a.cmd < b.cmd end)
 
         return pagination.create(ctx.msg.channel, {
-            title = (ctx.msg.service == "discord" and "<:kaito:818824729510936576> " or "") .. "Help",
+            title = "Kaito - Help",
             data = cmds,
             render_data = function(ctx, cmds)
                 local content = ""
