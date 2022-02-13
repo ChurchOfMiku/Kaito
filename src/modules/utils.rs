@@ -57,10 +57,10 @@ impl Module for UtilsModule {
             static ref TWITTER_RE: regex::Regex = regex::Regex::new(r#"https?://(?:www.)?twitter.com/.+/status(?:es)?/(\d+)(?:.+ )?"#).unwrap();
 
             /// Convert media.discordapp.net to cdn.discordapp.com
-            static ref DISCORD_MEDIA_VIDEO_RE: regex::Regex = regex::Regex::new(r#"https?:\/\/media.discordapp.net\/attachments\/\d+\/\d+\/\S+\.(?:mp4|mov|webm|mkv|flv|wmv|avi|mxf|mpg)"#).unwrap();
+            static ref DISCORD_MEDIA_VIDEO_RE: regex::Regex = regex::Regex::new(r#"https?://media.discordapp.net/attachments/\d+/\d+/\S+\.(?:mp4|mov|webm|mkv|flv|wmv|avi|mxf|mpg)"#).unwrap();
         }
 
-        #[derive(Clone, Copy)]
+        #[derive(Clone, Copy, PartialEq)]
         enum MediaService {
             Reddit,
             Tiktok,
