@@ -12,3 +12,11 @@ pub fn escape_untrusted_text(service: ServiceKind, text: String) -> String {
         _ => text,
     }
 }
+
+/// Case-insensitive Regex
+macro_rules! ci_regex {
+    ($regex:literal) => {
+        regex::RegexBuilder::new($regex).case_insensitive(true).build()
+    }
+}
+pub(crate) use ci_regex;
