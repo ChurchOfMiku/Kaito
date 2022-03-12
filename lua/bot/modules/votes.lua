@@ -129,8 +129,10 @@ function Vote:end_vote()
 
     -- Turn the user votes into results
     for k,v in pairs(user_votes) do
-        table.insert(results[v] , k)
-        total_votes = total_votes + 1
+        if v <= #self.options then
+            table.insert(results[v] , k)
+            total_votes = total_votes + 1
+        end
     end
 
     self.total_votes = total_votes
