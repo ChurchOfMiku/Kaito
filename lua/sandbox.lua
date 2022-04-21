@@ -127,10 +127,8 @@ function sandbox.async_callback(state, future, success, ...)
     end)
 end
 
-function sandbox.run(state, msg, source, env, trust, main)
+function sandbox.run(state, msg, source, env, main)
     local fenv = update_env(sandbox.env.get_env(), state)
-
-    fenv.__TRUST_CTX = trust
 
     if env then
         for k,v in pairs(json.decode(env)) do
@@ -256,18 +254,18 @@ end
 
 -- Hack to get __TRUST_CTX from anywhere in the stack
 function __TRUST_CTX_BUBBLE()
-    local i = 2
+    local i = 0
     while true do
-        local ar = debug.getinfo(i)
-        if ar == nil then
-            return nil
-        end
-        
-        local fenv = getfenv(ar.func)
-        if fenv and fenv.__TRUST_CTX then
-            return fenv.__TRUST_CTX
-        end
-        
         i = i + 1
+        local ar = debug.getinfo(i)
+        if ar ~= nil then
+            local fenv = getfenv(ar.func)
+            if fenv and fenv.msg then
+                return fenv.msg:__trust_ctx()
+            end
+        else
+            break
+        end
     end
+    return nil
 end

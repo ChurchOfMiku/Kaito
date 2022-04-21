@@ -28,7 +28,7 @@ use super::{
         tags::lib_tags,
         voice::lib_voice,
     },
-    LuaSandboxReplies, trust::TrustCtx,
+    LuaSandboxReplies
 };
 use crate::{
     bot::Bot,
@@ -256,8 +256,7 @@ impl LuaState {
         &self,
         source: &str,
         msg: BotMessage,
-        env_encoded: Option<String>,
-        trust: Option<TrustCtx>
+        env_encoded: Option<String>
     ) -> Result<(Arc<SandboxStateInner>, Receiver<SandboxMsg>)> {
         let sandbox_tbl: Table = self.inner.globals().get("sandbox")?;
         let run_fn: Function = sandbox_tbl.get("run")?;
@@ -288,9 +287,9 @@ impl LuaState {
 
         if let Some(env_encoded) = env_encoded {
             let env = self.inner.to_value(&env_encoded)?;
-            run_fn.call((sandbox_state.clone(), msg, source, env, trust.unwrap_or_default(), true))?;
+            run_fn.call((sandbox_state.clone(), msg, source, env, true))?;
         } else {
-            run_fn.call((sandbox_state.clone(), msg, source, LuaValue::Nil, trust.unwrap_or_default(), true))?;
+            run_fn.call((sandbox_state.clone(), msg, source, LuaValue::Nil, true))?;
         }
 
         Ok((sandbox_state.0, receiver))
