@@ -254,7 +254,7 @@ end
 
 -- Hack to get __TRUST_CTX from anywhere in the stack
 function __TRUST_CTX_BUBBLE()
-    local i = 0
+    local i = 1
     while true do
         i = i + 1
         local ar = debug.getinfo(i)
