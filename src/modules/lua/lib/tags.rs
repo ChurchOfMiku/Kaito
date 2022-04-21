@@ -7,7 +7,10 @@ use super::{
     super::state::LuaAsyncCallback,
     bot::{BotServer, BotUser},
 };
-use crate::bot::{db::{Tag, Uid}, Bot};
+use crate::bot::{
+    db::{Tag, Uid},
+    Bot,
+};
 
 #[derive(Debug, PartialEq)]
 enum TagPart {

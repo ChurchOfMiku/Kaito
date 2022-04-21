@@ -5,26 +5,32 @@ use crossbeam::channel::{Sender, TryRecvError};
 use futures::TryFutureExt;
 use mlua::{prelude::*, Error as LuaError, Lua, MetaMethod, Table, UserData, UserDataMethods};
 use std::{
-    sync::{Arc, atomic::AtomicBool},
+    sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
 
-use super::{super::{
-    state::{get_sandbox_state, LuaAsyncCallback, LuaState, SandboxMsg, SandboxTerminationReason},
-    LuaSandboxReplies,
-}, tags::LuaTag};
+use super::{
+    super::{
+        state::{
+            get_sandbox_state, LuaAsyncCallback, LuaState, SandboxMsg, SandboxTerminationReason,
+        },
+        LuaSandboxReplies,
+    },
+    tags::LuaTag,
+};
 use crate::{
     bot::{
         db::{Uid, User as DbUser},
         Bot, ROLES,
     },
     message::{Attachment, MessageEmbed, MessageSettings},
+    modules::lua::trust::{PendingTrustCtx, TrustCtx},
     services::{
         Channel, ChannelId, Message, MessageId, Server, ServerId, Service, ServiceFeatures,
         ServiceKind, Services, User, UserId,
     },
     settings::SettingContext,
-    utils::escape_untrusted_text, modules::lua::trust::{PendingTrustCtx, TrustCtx},
+    utils::escape_untrusted_text,
 };
 
 fn table_to_embed(tbl: LuaTable) -> Result<MessageEmbed> {
@@ -525,7 +531,7 @@ pub fn lib_bot(
 
             let user = user.borrow::<BotUser>()?.clone();
             let msg = msg.borrow::<BotMessage>()?.clone();
-            
+
             let env_encoded: String = serde_json::to_string(&LuaValue::Table(env))
                 .map_err(|err| LuaError::ExternalError(Arc::new(err)))?;
 
@@ -685,7 +691,7 @@ pub struct BotMessageInner {
     service: ServiceKind,
 
     // This really shouldn't be here, but it's one of the few places we can store state across async boundaries for the same message ("execution")
-    trust_ctx: AtomicBool
+    trust_ctx: AtomicBool,
 }
 
 impl BotMessage {
@@ -710,7 +716,7 @@ impl BotMessage {
             content: msg.content().to_string(),
             attachments,
             service: msg.service().kind(),
-            trust_ctx: AtomicBool::new(false)
+            trust_ctx: AtomicBool::new(false),
         })))
     }
 
@@ -731,7 +737,9 @@ impl BotMessage {
     }
 
     pub fn add_trust_ctx(&self, trust_ctx: TrustCtx) {
-        self.0.trust_ctx.fetch_or(trust_ctx.trusted, std::sync::atomic::Ordering::Release);
+        self.0
+            .trust_ctx
+            .fetch_or(trust_ctx.trusted, std::sync::atomic::Ordering::Release);
     }
 }
 
@@ -872,7 +880,9 @@ impl UserData for BotMessage {
         });
 
         methods.add_method("__trust_ctx", |state, msg, (): ()| {
-            Ok(TrustCtx { trusted: msg.0.trust_ctx.load(std::sync::atomic::Ordering::Acquire) })
+            Ok(TrustCtx {
+                trusted: msg.0.trust_ctx.load(std::sync::atomic::Ordering::Acquire),
+            })
         });
 
         methods.add_meta_method(MetaMethod::Index, |state, msg, index: String| {

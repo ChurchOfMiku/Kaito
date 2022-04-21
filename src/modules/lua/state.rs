@@ -28,7 +28,7 @@ use super::{
         tags::lib_tags,
         voice::lib_voice,
     },
-    LuaSandboxReplies
+    LuaSandboxReplies,
 };
 use crate::{
     bot::Bot,
@@ -256,7 +256,7 @@ impl LuaState {
         &self,
         source: &str,
         msg: BotMessage,
-        env_encoded: Option<String>
+        env_encoded: Option<String>,
     ) -> Result<(Arc<SandboxStateInner>, Receiver<SandboxMsg>)> {
         let sandbox_tbl: Table = self.inner.globals().get("sandbox")?;
         let run_fn: Function = sandbox_tbl.get("run")?;

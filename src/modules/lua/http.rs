@@ -1,19 +1,22 @@
 use crossbeam::channel::Sender;
 use futures::{StreamExt, TryStreamExt};
-use hyper::{body::Bytes, Body, Client, Request, Response, Method};
+use hyper::{body::Bytes, Body, Client, Method, Request, Response};
 use hyper_tls::HttpsConnector;
 use mlua::{
     prelude::{LuaError, LuaMultiValue, LuaTable},
-    Lua, Table, Value, String as LuaString
+    Lua, String as LuaString, Table, Value,
 };
 use std::{
+    convert::TryFrom,
     net::IpAddr,
     sync::{atomic::Ordering, Arc},
-    convert::TryFrom
 };
 use thiserror::Error;
 
-use super::{state::{LuaAsyncCallback, SandboxState}, trust::Trust};
+use super::{
+    state::{LuaAsyncCallback, SandboxState},
+    trust::Trust,
+};
 
 pub fn http_fetch<'a>(
     state: &'a Lua,
@@ -97,7 +100,13 @@ pub fn http_fetch<'a>(
     let req = Request::builder().uri(url.clone());
     let req = if state.is_in_trusted_context() {
         // Method
-        let mut req = req.method(options.get("method").ok().and_then(|method_str: LuaString| Method::try_from(method_str.as_bytes()).ok()).unwrap_or(Method::GET));
+        let mut req = req.method(
+            options
+                .get("method")
+                .ok()
+                .and_then(|method_str: LuaString| Method::try_from(method_str.as_bytes()).ok())
+                .unwrap_or(Method::GET),
+        );
 
         // Headers
         if let Some(headers) = options.get::<_, LuaTable>("headers").ok() {
@@ -109,7 +118,12 @@ pub fn http_fetch<'a>(
         }
 
         // Body
-        req.body(options.get::<_, LuaString>("body").map(|str| Body::from(str.as_bytes().to_vec())).unwrap_or_else(|_| Body::empty()))
+        req.body(
+            options
+                .get::<_, LuaString>("body")
+                .map(|str| Body::from(str.as_bytes().to_vec()))
+                .unwrap_or_else(|_| Body::empty()),
+        )
     } else {
         // Untrusted users can only make empty GET requests
         req.method(Method::GET).body(Body::empty())

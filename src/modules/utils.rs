@@ -66,7 +66,7 @@ impl Module for UtilsModule {
             Reddit,
             Tiktok,
             Twitter,
-            DiscordMediaVideoLink
+            DiscordMediaVideoLink,
         }
 
         impl MediaService {

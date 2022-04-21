@@ -11,8 +11,8 @@ use std::{
 mod lib;
 mod http;
 mod state;
-mod utils;
 mod trust;
+mod utils;
 
 use self::lib::bot::BotUser;
 
@@ -430,7 +430,7 @@ impl LuaModule {
 
                             break;
                         }
-                    }
+                    },
                 },
                 Err(TryRecvError::Empty) => {
                     tokio::time::sleep(Duration::from_millis(50)).await;
