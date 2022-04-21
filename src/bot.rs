@@ -16,6 +16,12 @@ use db::BotDb;
 
 pub const ROLES: &[&'static str] = &["guest", "trusted", "admin", "root"];
 pub const DEFAULT_ROLE: &'static str = ROLES[0];
+const TRUSTED_ROLE_MIN_IDX: usize = 1;
+
+#[inline]
+pub fn is_trusted_role(role: &str) -> bool {
+    ROLES.iter().position(|other| *other == role).unwrap_or(0) >= TRUSTED_ROLE_MIN_IDX
+}
 
 pub struct Bot {
     ctx: ArcSwapOption<BotContext>,

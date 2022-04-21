@@ -1,5 +1,6 @@
 sandbox = sandbox or {tasks = {}}
 
+include("./lib/fenv.lua")
 include("./lib/async.lua")
 json = include("./lib/json.lua")
 Lru = include("./lib/lru.lua")
@@ -16,7 +17,7 @@ function sandbox.exec(state, fenv, fn)
     local max_instructions = state:get_instruction_limit()
 
     -- Set the function env
-    sandbox.utils.setfenv(fn, fenv)
+    setfenv(fn, fenv)
 
     -- Create the coroutine thread
     local thread = coroutine.create(fn)
@@ -84,24 +85,24 @@ local function update_env(fenv, state)
 
         state:print(out)
     end
-    sandbox.utils.setfenv(fenv.print, fenv)
+    setfenv(fenv.print, fenv)
 
     fenv.http = fenv.http or {}
     fenv.http.fetch = function(url, data)
         return state:http_fetch(url, data or {})
     end
-    sandbox.utils.setfenv(fenv.http.fetch, fenv)
+    setfenv(fenv.http.fetch, fenv)
 
     fenv.json = fenv.json or {}
     local json = json
     fenv.json.decode = function(data)
         return json.decode(tostring(data))
     end
-    sandbox.utils.setfenv(fenv.json.decode, fenv)
+    setfenv(fenv.json.decode, fenv)
     fenv.json.encode = function(data)
         return json.encode(data)
     end
-    sandbox.utils.setfenv(fenv.json.encode, fenv)
+    setfenv(fenv.json.encode, fenv)
 
     fenv.Lru = sandbox.utils.deepcopy(Lru)
     fenv.RingBuffer = sandbox.utils.deepcopy(RingBuffer)
@@ -110,7 +111,7 @@ local function update_env(fenv, state)
     fenv.print_table = function(tbl)
         state:print(sandbox.utils.table_to_string(tbl))
     end
-    sandbox.utils.setfenv(fenv.print_table, fenv)
+    setfenv(fenv.print_table, fenv)
 
     return fenv
 end
@@ -126,8 +127,10 @@ function sandbox.async_callback(state, future, success, ...)
     end)
 end
 
-function sandbox.run(state, msg, source, env, main)
+function sandbox.run(state, msg, source, env, trust, main)
     local fenv = update_env(sandbox.env.get_env(), state)
+
+    fenv.__TRUST_CTX = trust
 
     if env then
         for k,v in pairs(json.decode(env)) do
@@ -249,4 +252,22 @@ function sandbox.think()
     end
 
     collectgarbage()
+end
+
+-- Hack to get __TRUST_CTX from anywhere in the stack
+function __TRUST_CTX_BUBBLE()
+    local i = 2
+    while true do
+        local ar = debug.getinfo(i)
+        if ar == nil then
+            return nil
+        end
+        
+        local fenv = getfenv(ar.func)
+        if fenv and fenv.__TRUST_CTX then
+            return fenv.__TRUST_CTX
+        end
+        
+        i = i + 1
+    end
 end

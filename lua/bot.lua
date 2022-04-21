@@ -3,6 +3,7 @@ bot.cmds = bot.cmds or {}
 bot.aliases = bot.aliases or {}
 bot.reaction_hooks = {}
 
+include("./lib/fenv.lua")
 include("./lib/async.lua")
 include("./lib/hooks.lua")
 json = include("./lib/json.lua")

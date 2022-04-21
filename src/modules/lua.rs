@@ -12,6 +12,7 @@ mod lib;
 mod http;
 mod state;
 mod utils;
+mod trust;
 
 use self::lib::bot::BotUser;
 
@@ -76,10 +77,10 @@ impl Module for LuaModule {
             loop {
                 interval.tick().await;
                 if let Err(err) = bot_state2.lock_arc().await.think() {
-                    println!("error: {}", err.to_string());
+                    println!("error: {}", err);
                 }
                 if let Err(err) = sandbox_state2.lock_arc().await.think() {
-                    println!("error: {}", err.to_string());
+                    println!("error: {}", err);
                 }
             }
         });
@@ -338,7 +339,7 @@ impl LuaModule {
 
         let sender = lua_state.async_sender();
         let bot_msg = BotMessage::from_msg(self.bot.clone(), sender, &msg).await?;
-        let (sandbox_state, recv) = match lua_state.run_sandboxed(&code, bot_msg, None) {
+        let (sandbox_state, recv) = match lua_state.run_sandboxed(&code, bot_msg, None, None) {
             Ok(recv) => recv,
             Err(_err) => {
                 return Ok(());
@@ -429,7 +430,7 @@ impl LuaModule {
 
                             break;
                         }
-                    },
+                    }
                 },
                 Err(TryRecvError::Empty) => {
                     tokio::time::sleep(Duration::from_millis(50)).await;

@@ -36,3 +36,4 @@ thiserror = "1.0"
 toml = "0.5"
 sqlx = { version = "0.5", features = ["sqlite", "runtime-async-std-rustls"] }
 url = "2.2"
+backtrace = "0"

@@ -28,7 +28,7 @@ use super::{
         tags::lib_tags,
         voice::lib_voice,
     },
-    LuaSandboxReplies,
+    LuaSandboxReplies, trust::TrustCtx,
 };
 use crate::{
     bot::Bot,
@@ -86,7 +86,7 @@ pub fn get_sandbox_state(state: &Lua) -> Option<SandboxState> {
 
 pub struct LuaState {
     bot: Arc<Bot>,
-    inner: Lua,
+    pub inner: Lua,
     sandbox: bool,
     async_sender: Sender<LuaAsyncCallback>,
     async_receiver: Receiver<LuaAsyncCallback>,
@@ -257,6 +257,7 @@ impl LuaState {
         source: &str,
         msg: BotMessage,
         env_encoded: Option<String>,
+        trust: Option<TrustCtx>
     ) -> Result<(Arc<SandboxStateInner>, Receiver<SandboxMsg>)> {
         let sandbox_tbl: Table = self.inner.globals().get("sandbox")?;
         let run_fn: Function = sandbox_tbl.get("run")?;
@@ -287,9 +288,9 @@ impl LuaState {
 
         if let Some(env_encoded) = env_encoded {
             let env = self.inner.to_value(&env_encoded)?;
-            run_fn.call((sandbox_state.clone(), msg, source, env, true))?;
+            run_fn.call((sandbox_state.clone(), msg, source, env, trust.unwrap_or_default(), true))?;
         } else {
-            run_fn.call((sandbox_state.clone(), msg, source, LuaValue::Nil, true))?;
+            run_fn.call((sandbox_state.clone(), msg, source, LuaValue::Nil, trust.unwrap_or_default(), true))?;
         }
 
         Ok((sandbox_state.0, receiver))

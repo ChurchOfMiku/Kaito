@@ -1,24 +1,25 @@
 use crossbeam::channel::Sender;
 use futures::{StreamExt, TryStreamExt};
-use hyper::{body::Bytes, Body, Client, Request, Response};
+use hyper::{body::Bytes, Body, Client, Request, Response, Method};
 use hyper_tls::HttpsConnector;
 use mlua::{
     prelude::{LuaError, LuaMultiValue, LuaTable},
-    Lua, Table, Value,
+    Lua, Table, Value, String as LuaString
 };
 use std::{
     net::IpAddr,
     sync::{atomic::Ordering, Arc},
+    convert::TryFrom
 };
 use thiserror::Error;
 
-use super::state::{LuaAsyncCallback, SandboxState};
+use super::{state::{LuaAsyncCallback, SandboxState}, trust::Trust};
 
 pub fn http_fetch<'a>(
     state: &'a Lua,
     sandbox_state: &SandboxState,
     url: &str,
-    _options: LuaTable<'a>,
+    options: LuaTable<'a>,
 ) -> Result<LuaTable<'a>, LuaError> {
     // Check http call limit
     let calls_left = sandbox_state
@@ -93,11 +94,28 @@ pub fn http_fetch<'a>(
     let client = Client::builder().build::<_, Body>(https);
 
     let url = url.to_string();
-    let req = match Request::builder()
-        .method("GET")
-        .uri(url.clone())
-        .body(Body::empty())
-    {
+    let req = Request::builder().uri(url.clone());
+    let req = if state.is_in_trusted_context() {
+        // Method
+        let mut req = req.method(options.get("method").ok().and_then(|method_str: LuaString| Method::try_from(method_str.as_bytes()).ok()).unwrap_or(Method::GET));
+
+        // Headers
+        if let Some(headers) = options.get::<_, LuaTable>("headers").ok() {
+            for pair in headers.pairs::<LuaString, LuaString>() {
+                if let Ok((key, value)) = pair {
+                    req = req.header(key.as_bytes(), value.as_bytes());
+                }
+            }
+        }
+
+        // Body
+        req.body(options.get::<_, LuaString>("body").map(|str| Body::from(str.as_bytes().to_vec())).unwrap_or_else(|_| Body::empty()))
+    } else {
+        // Untrusted users can only make empty GET requests
+        req.method(Method::GET).body(Body::empty())
+    };
+
+    let req = match req {
         Ok(req) => req,
         Err(err) => {
             return Err(LuaError::ExternalError(Arc::new(

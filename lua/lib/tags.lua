@@ -36,14 +36,15 @@ tags.SCRIPTED_TAGS = {
     },
     lua = {
         fn = function(ctx, code)
-            local err, res = bot.run_sandboxed_lua(ctx.user, ctx.msg, code, {
+            local env = {
                 args = ctx.extra_args,
                 user = {
                     name = ctx.user.name,
                     id = ctx.user.id
                 }
-            }):await()
+            }
 
+            local err, res = bot.run_sandboxed_lua(ctx.user, ctx.msg, code, env, ctx.tag):await()
             if err then
                 error(err)
             end

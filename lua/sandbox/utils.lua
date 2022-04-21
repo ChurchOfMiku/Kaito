@@ -25,43 +25,6 @@ function sandbox.utils.deepcopy(orig)
     return copy
 end
 
-function sandbox.utils.setfenv(fn, env)
-    local i = 1
-    while true do
-        local name = debug.getupvalue(fn, i)
-        if name == "_ENV" then
-            debug.upvaluejoin(
-                fn,
-                i,
-                (function()
-                    return env
-                end),
-                1
-            )
-            break
-        elseif not name then
-            break
-        end
-
-        i = i + 1
-    end
-
-    return fn
-end
-
-function sandbox.utils.getfenv(fn)
-    local i = 1
-    while true do
-        local name, val = debug.getupvalue(fn, i)
-        if name == "_ENV" then
-            return val
-        elseif not name then
-            break
-        end
-        i = i + 1
-    end
-end
-
 function sandbox.utils.is_array(tbl)
     local i = 0
     for _ in pairs(tbl) do

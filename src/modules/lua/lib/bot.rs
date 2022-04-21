@@ -9,10 +9,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::super::{
+use super::{super::{
     state::{get_sandbox_state, LuaAsyncCallback, LuaState, SandboxMsg, SandboxTerminationReason},
     LuaSandboxReplies,
-};
+}, tags::LuaTag};
 use crate::{
     bot::{
         db::{Uid, User as DbUser},
@@ -24,7 +24,7 @@ use crate::{
         ServiceKind, Services, User, UserId,
     },
     settings::SettingContext,
-    utils::escape_untrusted_text,
+    utils::escape_untrusted_text, modules::lua::trust::TrustCtx,
 };
 
 fn table_to_embed(tbl: LuaTable) -> Result<MessageEmbed> {
@@ -509,22 +509,30 @@ pub fn lib_bot(
     )?;
     bot_tbl.set("set_setting", set_setting_fn)?;
 
+    let bot2 = bot.clone();
     let sender2 = sender.clone();
     let run_sandboxed_lua_fn = state.create_function(
         move |state,
-              (user, msg, code, env): (
+              (user, msg, code, env, tag): (
             LuaAnyUserData,
             LuaAnyUserData,
             String,
-            Table
+            Table,
+            Option<LuaAnyUserData>
         )| {
+            let bot = bot2.clone();
             let sandbox_state = sandbox_state.clone();
 
-            let _user = user.borrow::<BotUser>()?.clone();
+            let user = user.borrow::<BotUser>()?.clone();
             let msg = msg.borrow::<BotMessage>()?.clone();
-
+            
             let env_encoded: String = serde_json::to_string(&LuaValue::Table(env))
                 .map_err(|err| LuaError::ExternalError(Arc::new(err)))?;
+
+            let pending_trust = (
+                tag.and_then(|tag| tag.borrow::<LuaTag>().ok().map(|tag| tag.owner_uid())),
+                user.1.uid
+            );
 
             let fut = create_lua_future!(
                 state,
@@ -533,7 +541,14 @@ pub fn lib_bot(
                 async move {
                     let lua_state = sandbox_state.lock_arc().await;
 
-                    let (_sandbox_state, recv) = match lua_state.run_sandboxed(&code, msg, Some(env_encoded)) {
+                    let trust = if let Some(uid) = pending_trust.0 {
+                        // Tag trust overrides sandbox user trust
+                        TrustCtx::default().update(&*bot, uid).await
+                    } else {
+                        TrustCtx::default().update(&*bot, pending_trust.1).await
+                    };
+
+                    let (_sandbox_state, recv) = match lua_state.run_sandboxed(&code, msg, Some(env_encoded), Some(trust)) {
                         Ok(recv) => recv,
                         Err(err) => {
                             return Err(anyhow::anyhow!(err.to_string()));

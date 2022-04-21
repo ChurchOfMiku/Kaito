@@ -7,7 +7,7 @@ use super::{
     super::state::LuaAsyncCallback,
     bot::{BotServer, BotUser},
 };
-use crate::bot::{db::Tag, Bot};
+use crate::bot::{db::{Tag, Uid}, Bot};
 
 #[derive(Debug, PartialEq)]
 enum TagPart {
@@ -262,6 +262,7 @@ pub fn lib_tags(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
 
     Ok(())
 }
+
 pub struct LuaTag {
     bot: Arc<Bot>,
     sender: Sender<LuaAsyncCallback>,
@@ -269,6 +270,10 @@ pub struct LuaTag {
 }
 
 impl LuaTag {
+    pub fn owner_uid(&self) -> Uid {
+        self.inner.uid
+    }
+
     pub fn from_tag(bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>, inner: Tag) -> Result<LuaTag> {
         Ok(LuaTag { bot, sender, inner })
     }
