@@ -77,20 +77,20 @@ function sandbox.utils.table_to_string(tbl, indent, key, tbls)
     end
 
     local left_pad2 = newlines and string.rep(" ", indent + 2) or ""
-    local out = left_pad .. (key and (key .. " = ") or "") .. "{" .. (newlines and "\n" or " ")
+    local out = left_pad .. (key and (tostring(key) .. " = ") or "") .. "{" .. (newlines and "\n" or " ")
 
     for k,v in pairs(tbl) do
         local t = type(v)
         if t == "table" then
             if tbls[v] then
-                out = out .. left_pad2 .. (is_array and "" or k .. " = ") .. tostring(v)
+                out = out .. left_pad2 .. (is_array and "" or tostring(k) .. " = ") .. tostring(v)
             else
                 out = out .. sandbox.utils.table_to_string(v, indent + 2, k, tbls)
             end
         elseif t == "string" then
-            out = out .. left_pad2 .. (is_array and "\"" or k .. " = \"") .. tostring(v) .. "\""
+            out = out .. left_pad2 .. (is_array and "\"" or tostring(k) .. " = \"") .. tostring(v) .. "\""
         else
-            out = out .. left_pad2 .. (is_array and "" or k .. " = ") .. tostring(v)
+            out = out .. left_pad2 .. (is_array and "" or tostring(k) .. " = ") .. tostring(v)
         end
 
         if next(tbl, k) == nil then
