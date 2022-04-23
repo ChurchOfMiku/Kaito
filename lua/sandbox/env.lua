@@ -28,16 +28,17 @@ sandbox.env.base_env = {
 
 function sandbox.env.get_env()
     local env = sandbox.env.env or {}
+    setmetatable(env, nil)
 
     for k,v in pairs(sandbox.env.base_env) do
         if type(v) == "table" then
-            env[k] = sandbox.utils.deepcopy(v)
+            rawset(env, k, sandbox.utils.deepcopy(v))
         else
-            env[k] = v
+            rawset(env, k, v)
         end
     end
 
-    env._G = env
+    rawset(env, "_G", env)
 
     return env
 end

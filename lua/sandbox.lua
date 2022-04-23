@@ -20,7 +20,7 @@ function sandbox.exec(state, fenv, fn)
 
     -- Create the coroutine thread
     local thread = coroutine.create(fn)
-    local timeout = os.clock() + 12
+    local timeout = os.clock() + 30
 
     debug.sethook(
         thread,
@@ -70,7 +70,8 @@ local function update_env(fenv, state)
     local pairs = pairs
     local tostring = tostring
     local next = next
-    fenv.print = function(...)
+    local upd_fenv = {}
+    upd_fenv.print = function(...)
         local out = ""
         local tbl = {...}
 
@@ -84,33 +85,47 @@ local function update_env(fenv, state)
 
         state:print(out)
     end
-    sandbox.utils.setfenv(fenv.print, fenv)
+    sandbox.utils.setfenv(upd_fenv.print, fenv)
 
-    fenv.http = fenv.http or {}
-    fenv.http.fetch = function(url, data)
+    upd_fenv.http = {}
+    upd_fenv.http.fetch = function(url, data)
         return state:http_fetch(url, data or {})
     end
-    sandbox.utils.setfenv(fenv.http.fetch, fenv)
+    sandbox.utils.setfenv(upd_fenv.http.fetch, fenv)
 
-    fenv.json = fenv.json or {}
+    upd_fenv.json = {}
     local json = json
-    fenv.json.decode = function(data)
+    upd_fenv.json.decode = function(data)
         return json.decode(tostring(data))
     end
-    sandbox.utils.setfenv(fenv.json.decode, fenv)
-    fenv.json.encode = function(data)
+    sandbox.utils.setfenv(upd_fenv.json.decode, fenv)
+    upd_fenv.json.encode = function(data)
         return json.encode(data)
     end
-    sandbox.utils.setfenv(fenv.json.encode, fenv)
+    sandbox.utils.setfenv(upd_fenv.json.encode, fenv)
 
-    fenv.Lru = sandbox.utils.deepcopy(Lru)
-    fenv.RingBuffer = sandbox.utils.deepcopy(RingBuffer)
+    upd_fenv.Lru = sandbox.utils.deepcopy(Lru)
+    upd_fenv.RingBuffer = sandbox.utils.deepcopy(RingBuffer)
 
     local sandbox = sandbox
-    fenv.print_table = function(tbl)
+    upd_fenv.print_table = function(tbl)
         state:print(sandbox.utils.table_to_string(tbl))
     end
-    sandbox.utils.setfenv(fenv.print_table, fenv)
+    sandbox.utils.setfenv(upd_fenv.print_table, fenv)
+
+    -- Update
+    local function update_fenv(fenv, upd_fenv)
+        for k,v in pairs(upd_fenv) do
+            if type(v) == "table" then
+                rawset(fenv, k, {})
+                update_fenv(rawget(fenv, k), upd_fenv[k])
+            else
+                rawset(fenv, k, v)
+            end
+        end
+    end
+
+    update_fenv(fenv, upd_fenv)
 
     return fenv
 end
@@ -129,15 +144,19 @@ end
 function sandbox.run(state, msg, source, env, main)
     local fenv = update_env(sandbox.env.get_env(), state)
 
-    if env then
-        for k,v in pairs(json.decode(env)) do
-            fenv[k] = v
+    local function restore_env(env, msg)
+        if env then
+            for k,v in pairs(json.decode(env)) do
+                rawset(fenv, k, v)
+            end
+        end
+    
+        if msg then
+            rawset(fenv, "msg", msg)
         end
     end
 
-    if msg then
-        fenv.msg = msg
-    end
+    restore_env(env, msg)
 
     local fn, err
 
@@ -174,6 +193,7 @@ function sandbox.run(state, msg, source, env, main)
 
                 local fenv = sandbox.env.env
                 state:set_state() -- Get Rust to set the registry sandbox state variable
+                restore_env(env, msg)
                 local succ, thread, res = sandbox.run_coroutine(thread)
 
                 if not succ then
