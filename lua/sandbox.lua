@@ -159,7 +159,7 @@ end
 function sandbox.run(state, msg, source, env, main)
     local fenv = update_env(sandbox.env.get_env(), state)
 
-    local function restore_env(env, msg)
+    local function restore_env(fenv, env, msg)
         if env then
             for k,v in pairs(json.decode(env)) do
                 rawset(fenv, k, v)
@@ -171,7 +171,7 @@ function sandbox.run(state, msg, source, env, main)
         end
     end
 
-    restore_env(env, msg)
+    restore_env(fenv, env, msg)
 
     local fn, err
 
@@ -208,7 +208,7 @@ function sandbox.run(state, msg, source, env, main)
 
                 local fenv = sandbox.env.env
                 state:set_state() -- Get Rust to set the registry sandbox state variable
-                restore_env(env, msg)
+                restore_env(fenv, env, msg)
                 local succ, thread, res = sandbox.run_coroutine(thread)
 
                 if not succ then
