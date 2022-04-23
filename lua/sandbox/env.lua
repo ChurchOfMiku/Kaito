@@ -12,9 +12,6 @@ sandbox.env.base_env = {
     math = math,
     string = string,
     table = table,
-    -- Tables
-    setmetatable = setmetatable,
-    getmetatable = getmetatable,
     -- Iters
     pairs = pairs,
     ipairs = ipairs,

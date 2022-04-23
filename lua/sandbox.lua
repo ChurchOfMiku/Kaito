@@ -70,6 +70,9 @@ local function update_env(fenv, state)
     local pairs = pairs
     local tostring = tostring
     local next = next
+    local type = type
+    local setmetatable = setmetatable
+    local getmetatable = getmetatable
     local upd_fenv = {}
     upd_fenv.print = function(...)
         local out = ""
@@ -112,6 +115,18 @@ local function update_env(fenv, state)
         state:print(sandbox.utils.table_to_string(tbl))
     end
     sandbox.utils.setfenv(upd_fenv.print_table, fenv)
+
+    -- Metatables
+    upd_fenv.setmetatable = function(table, metatable)
+        if type(table) ~= "table" then error("lol no") end
+        return setmetatable(table, metatable)
+    end
+    sandbox.utils.setfenv(upd_fenv.setmetatable, fenv)
+    upd_fenv.getmetatable = function(object)
+        if type(object) ~= "table" then error("lol no") end
+        return getmetatable(table, object)
+    end
+    sandbox.utils.setfenv(upd_fenv.getmetatable, fenv)
 
     -- Update
     local function update_fenv(fenv, upd_fenv)
