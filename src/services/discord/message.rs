@@ -117,16 +117,9 @@ impl Message<DiscordService> for DiscordMessage {
 
     async fn channel(&self) -> Result<Arc<DiscordChannel>> {
         let cache_and_http = self.service().cache_and_http();
-        // Check the cache
-        if let Some(channel) = self.msg.channel(&cache_and_http.cache).await {
-            return Ok(Arc::new(DiscordChannel::new(channel, self.service.clone())));
-        }
 
-        // Fallback to REST
-        let channel = cache_and_http
-            .http
-            .get_channel(*self.msg.channel_id.as_u64())
-            .await?;
+        let channel = self.msg.channel(&cache_and_http).await?;
+
         Ok(Arc::new(DiscordChannel::new(channel, self.service.clone())))
     }
 

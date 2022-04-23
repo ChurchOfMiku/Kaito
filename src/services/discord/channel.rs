@@ -1,5 +1,5 @@
 use anyhow::Result;
-use serenity::{http::AttachmentType, model::channel};
+use serenity::model::channel::{self, AttachmentType};
 use std::{convert::TryInto, sync::Arc};
 
 use super::{
@@ -128,7 +128,7 @@ impl Channel<DiscordService> for DiscordChannel {
         };
 
         let cache_and_http = self.service().cache_and_http();
-        if let Some(guild) = cache_and_http.cache.guild(guild_id).await {
+        if let Some(guild) = cache_and_http.cache.guild(guild_id) {
             return Ok(Arc::new(DiscordServer::new(guild, self.service.clone())));
         }
 

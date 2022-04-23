@@ -9,7 +9,7 @@ use serenity::{
     model::{
         channel::{Message, Reaction, ReactionType},
         event::MessageUpdateEvent,
-        gateway::Ready,
+        gateway::{GatewayIntents, Ready},
         id::{ChannelId, GuildId, MessageId},
     },
     prelude::*,
@@ -186,7 +186,7 @@ impl Service for DiscordService {
         let mut retry_count = 1;
 
         loop {
-            match Client::builder(&config.token)
+            match Client::builder(&config.token, GatewayIntents::all())
                 .event_handler(SerenityHandler::new(service.clone()))
                 .register_songbird()
                 .await
@@ -211,8 +211,7 @@ impl Service for DiscordService {
             .cache()
             .as_ref()
             .unwrap()
-            .set_max_messages(64)
-            .await;
+            .set_max_messages(64);
 
         service
             .cache_and_http
@@ -260,7 +259,7 @@ impl Service for DiscordService {
 
     async fn current_user(self: &Arc<DiscordService>) -> Result<Arc<user::DiscordUser>> {
         Ok(Arc::new(user::DiscordUser::new(
-            self.cache_and_http().cache.current_user().await.into(),
+            self.cache_and_http().cache.current_user().into(),
             self.clone(),
         )))
     }
@@ -270,7 +269,7 @@ impl Service for DiscordService {
         channel_id: Self::ChannelId,
         id: Self::MessageId,
     ) -> Result<Arc<Self::Message>> {
-        let message = match self.cache_and_http().cache.message(channel_id, id).await {
+        let message = match self.cache_and_http().cache.message(channel_id, id) {
             Some(message) => message,
             None => {
                 self.cache_and_http()
@@ -287,7 +286,7 @@ impl Service for DiscordService {
     }
 
     async fn server(self: &Arc<Self>, id: Self::ServerId) -> Result<Arc<Self::Server>> {
-        let server = match self.cache_and_http().cache.guild(id).await {
+        let server = match self.cache_and_http().cache.guild(id) {
             Some(server) => server,
             None => return Err(anyhow::anyhow!("error getting server")),
         };
@@ -296,7 +295,7 @@ impl Service for DiscordService {
     }
 
     async fn channel(self: &Arc<Self>, id: Self::ChannelId) -> Result<Arc<Self::Channel>> {
-        let channel = match self.cache_and_http().cache.channel(id).await {
+        let channel = match self.cache_and_http().cache.channel(id) {
             Some(channel) => channel,
             None => self.cache_and_http().http.get_channel(id).await?,
         };
@@ -314,7 +313,7 @@ impl Service for DiscordService {
             return Ok(user.clone());
         }
 
-        let user = match self.cache_and_http().cache.user(id).await {
+        let user = match self.cache_and_http().cache.user(id) {
             Some(user) => user,
             None => self.cache_and_http().http.get_user(id).await?,
         };
@@ -330,7 +329,7 @@ impl Service for DiscordService {
         let find = find.trim();
 
         if let Some(id) = serenity::utils::parse_username(find).or(u64::from_str(find).ok()) {
-            let user = match self.cache_and_http().cache.user(id).await {
+            let user = match self.cache_and_http().cache.user(id) {
                 Some(channel) => channel,
                 None => self.cache_and_http().http.get_user(id).await?,
             };
@@ -397,7 +396,7 @@ impl DiscordService {
     }
 
     async fn find_channel(self: &Arc<Self>, id: u64) -> Result<Arc<channel::DiscordChannel>> {
-        let channel = match self.cache_and_http().cache.channel(id).await {
+        let channel = match self.cache_and_http().cache.channel(id) {
             Some(channel) => channel,
             None => self.cache_and_http().http.get_channel(id).await?,
         };

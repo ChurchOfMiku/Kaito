@@ -110,6 +110,7 @@ impl LuaState {
                     | StdLib::UTF8
                     | StdLib::MATH
                     | StdLib::DEBUG,
+                Default::default(),
             )
         };
 

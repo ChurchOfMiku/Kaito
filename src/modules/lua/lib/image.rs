@@ -598,7 +598,7 @@ pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
                                     }
                                 }
 
-                                if let Some(emoji) = emojis::lookup(text) {
+                                if let Some(emoji) = emojis::get(text) {
                                     let code = emoji.as_str().chars().map(|code| format!("{:x}", code as u32)).collect::<Vec<_>>().join("-");
                                     let url = format!("https://cdnjs.cloudflare.com/ajax/libs/twemoji/13.0.2/svg/{}.svg", code);
                                     if let Ok(image_data) = download_image(&url::Url::parse(&url)?).await {
