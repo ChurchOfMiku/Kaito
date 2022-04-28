@@ -1,6 +1,6 @@
 sandbox.utils = sandbox.utils or {}
 
-function sandbox.utils.deepcopy(orig)
+function sandbox.utils.deepcopy(orig, copies)
     local deepcopy = sandbox.utils.deepcopy
 
     -- http://lua-users.org/wiki/CopyTable
