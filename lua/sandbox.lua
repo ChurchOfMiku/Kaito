@@ -117,8 +117,17 @@ local function update_env(fenv, state)
     sandbox.utils.setfenv(upd_fenv.print_table, fenv)
 
     -- Metatables
+    local unsafe_metamethods = {"__mode", "__gc", "__close"}
+    local rawget = rawget
     upd_fenv.setmetatable = function(table, metatable)
-        if type(table) ~= "table" then error("lol no") end
+        if type(table) ~= "table" or type(metatable) ~= "table" then error("lol no") end
+
+        for _,k in pairs(unsafe_metamethods) do
+            if rawget(metatable, k) ~= nil then
+                error("lol no")
+            end
+        end
+
         return setmetatable(table, metatable)
     end
     sandbox.utils.setfenv(upd_fenv.setmetatable, fenv)
