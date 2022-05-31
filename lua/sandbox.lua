@@ -24,19 +24,22 @@ function sandbox.exec(state, fenv, fn)
 
     debug.sethook(
         thread,
-        function()
-            instructions_run = instructions_run + HOOK_EVERY_INSTRUCTION
-            state:set_instructions_run(instructions_run)
-            if instructions_run >= max_instructions then
-                state:terminate("exec")
-                error("Execution quota exceeded")
-            end
+        coroutine.wrap(function()
+            while true do
+                instructions_run = instructions_run + HOOK_EVERY_INSTRUCTION
+                state:set_instructions_run(instructions_run)
+                if instructions_run >= max_instructions then
+                    state:terminate("exec")
+                    error("Execution quota exceeded")
+                end
 
-            if os.clock() > timeout then
-                state:terminate("time")
-                error("Execution time limit reached")
+                if os.clock() > timeout then
+                    state:terminate("time")
+                    error("Execution time limit reached")
+                end
+                coroutine.yield()
             end
-        end,
+        end),
         "",
         HOOK_EVERY_INSTRUCTION
     )
