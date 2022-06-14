@@ -16,7 +16,7 @@ pkgs.mkShell {
     libopus
     libwebp
     ffmpeg
-    youtube-dl
+    yt-dlp
     graphicsmagick
   ];
 

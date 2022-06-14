@@ -125,7 +125,7 @@ impl Module for UtilsModule {
                         continue;
                     }
 
-                    let output = tokio::process::Command::new("youtube-dl")
+                    let output = tokio::process::Command::new("yt-dlp")
                         .arg("-g")
                         .arg("-f")
                         .arg("best")
@@ -152,7 +152,7 @@ impl Module for UtilsModule {
                             }
                         }
                         Err(err) => {
-                            println!("Error from youtube-dl url extraction: {}", err.to_string())
+                            println!("Error from yt-dlp url extraction: {}", err.to_string())
                         }
                     }
 
@@ -165,10 +165,11 @@ impl Module for UtilsModule {
 
                         let out_path = std::env::temp_dir().join(format!("{}.mp4", name));
 
-                        // TODO: Move to pipeing to stdout when youtube-dl can support do it after muxing
-                        tokio::process::Command::new("youtube-dl")
+                        // TODO: Move to pipeing to stdout when yt-dlp can support do it after muxing
+                        tokio::process::Command::new("yt-dlp")
                                 .args(&[
                                     "-f", "bestvideo[filesize<6MB]+bestaudio[filesize<2MB]/best/bestvideo+bestaudio",
+                                    "-S", "vcodec:h264",
                                     "--merge-output-format", "mp4",
                                     "--ignore-config",
                                     "--no-playlist",
