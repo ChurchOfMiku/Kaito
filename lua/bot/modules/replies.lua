@@ -18,7 +18,7 @@ hooks.add("message", "replies", function(msg)
     for check, replies in pairs(REPLIES) do
         local dist = string.levenshtein(string.sub(string.lower(msg.content), 1, #check), check)
 
-        if dist < 3 then
+        if dist < 3 msg.content:lower():find("kaito") then
             local reply = replies[math.random(1, #replies)]
             local reply_chars = count_chars(reply)
 
