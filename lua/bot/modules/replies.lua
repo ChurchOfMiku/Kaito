@@ -1,5 +1,4 @@
--- Comment out to untimeout kaito
-
+-- Comment out everything so lix will free kaito
 -- local function count_caps(str)
 --     local _, caps = string.gsub(str, "[A-Z]", "")
 --     return caps
