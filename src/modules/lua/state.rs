@@ -206,7 +206,13 @@ impl LuaState {
         Ok(())
     }
 
-    pub fn run_bot_command(&self, msg: BotMessage, args: Vec<String>, edited: bool, spammy_commands: bool) -> Result<()> {
+    pub fn run_bot_command(
+        &self,
+        msg: BotMessage,
+        args: Vec<String>,
+        edited: bool,
+        spammy_commands: bool,
+    ) -> Result<()> {
         let bot_tbl: Table = self.inner.globals().get("bot")?;
         let on_command_fn: Function = bot_tbl.get("on_command")?;
 

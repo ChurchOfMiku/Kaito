@@ -279,7 +279,7 @@ impl LuaModule {
         let lua_state = self.get_bot_state().await?;
         let sender = lua_state.async_sender();
         let bot_msg = BotMessage::from_msg(self.bot.clone(), sender, &msg).await?;
-        
+
         let channel = msg.channel().await?;
         let server = channel.server().await?;
         let spammy_commands = self

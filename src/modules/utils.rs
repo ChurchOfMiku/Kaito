@@ -61,12 +61,23 @@ impl Module for UtilsModule {
             static ref DISCORD_MEDIA_VIDEO_RE: regex::Regex = ci_regex!(r#"https?://media.discordapp.net/attachments/\d+/\d+/\S+\.(?:mp4|mov|webm|mkv|flv|wmv|avi|mxf|mpg)"#).unwrap();
         }
 
+        let user = self
+            .bot
+            .db()
+            .get_user_from_service_user_id(msg.author().id())
+            .await?;
+
+        // Ignore restricted messages
+        if self.bot.db().is_restricted(user.uid).await? {
+            return Ok(());
+        }
+
         #[derive(Clone, Copy, PartialEq)]
         enum MediaService {
             Reddit,
             Tiktok,
             Twitter,
-            DiscordMediaVideoLink
+            DiscordMediaVideoLink,
         }
 
         impl MediaService {

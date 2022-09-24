@@ -92,7 +92,9 @@ impl Channel<DiscordService> for DiscordChannel {
                 });
 
                 if !content.is_empty() {
-                    if content.chars().count() > 2000 || content.as_bytes().iter().filter(|&&c| c == b'\n').count() > 20 {
+                    if content.chars().count() > 2000
+                        || content.as_bytes().iter().filter(|&&c| c == b'\n').count() > 20
+                    {
                         m = m.add_file(AttachmentType::Bytes {
                             data: std::borrow::Cow::from(content.as_bytes().to_owned()),
                             filename: "message.txt".into(),
