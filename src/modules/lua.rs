@@ -46,7 +46,8 @@ settings! {
         enable: bool => (true, SettingFlags::empty(), "Enable the lua module", []),
         prefix: String => ("&".into(), SettingFlags::empty(), "Set the message prefix for lua commands", [max_len => 8]),
         always_eval: bool => (false, SettingFlags::empty(), "Evaluate all messages in the sandbox", []),
-        lua_prefix: String => ("]".into(), SettingFlags::empty(), "Set the lua prefix for runnning lua code in the sandbox with errors", [max_len => 8])
+        lua_prefix: String => ("]".into(), SettingFlags::empty(), "Set the lua prefix for runnning lua code in the sandbox with errors", [max_len => 8]),
+        spammy_commands: bool => (true, SettingFlags::empty(), "Enable spammy commands", [])
     }
 }
 
@@ -278,8 +279,16 @@ impl LuaModule {
         let lua_state = self.get_bot_state().await?;
         let sender = lua_state.async_sender();
         let bot_msg = BotMessage::from_msg(self.bot.clone(), sender, &msg).await?;
+        
+        let channel = msg.channel().await?;
+        let server = channel.server().await?;
+        let spammy_commands = self
+            .settings
+            .spammy_commands
+            .value(server.id(), channel.id())
+            .await?;
 
-        let res = lua_state.run_bot_command(bot_msg, args, edited);
+        let res = lua_state.run_bot_command(bot_msg, args, edited, spammy_commands);
         drop(lua_state);
 
         if let Err(err) = res {

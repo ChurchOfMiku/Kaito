@@ -9,6 +9,7 @@ bot.add_command("gpt", {
             required = true,
         }
     },
+    spammy = true,
     callback = function(ctx)
         local input = (ctx.args.input or "")
 

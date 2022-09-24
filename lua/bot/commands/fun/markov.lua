@@ -10,6 +10,7 @@ bot.add_command("markov", {
             description = "Input for start of sentence",
         }
     },
+    spammy = true,
     callback = function(ctx)
         if running >= 6 then
             return ctx.msg:reply("current running markov operations limit reached"):await()

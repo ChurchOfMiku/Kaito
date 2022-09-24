@@ -345,7 +345,7 @@ local function exec_command(msg, cmd, args)
     })
 end
 
-function bot.on_command(msg, args, edited)
+function bot.on_command(msg, args, edited, spammy_commands)
     local cmd_name = args[1]
     local args = {table.unpack(args, 2, #args)}
 
@@ -369,6 +369,12 @@ function bot.on_command(msg, args, edited)
             
             count = entry.count + 1
         end
+    end
+
+    if cmd.spammy and not spammy_commands then
+        local reply = msg:reply("Commands that can lead to spam has been disabled in this channel or server."):await()
+        bot.add_command_history(msg, reply, count)
+        return
     end
 
     local reply = exec_command(msg, cmd, args)

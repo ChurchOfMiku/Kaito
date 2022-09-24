@@ -206,13 +206,13 @@ impl LuaState {
         Ok(())
     }
 
-    pub fn run_bot_command(&self, msg: BotMessage, args: Vec<String>, edited: bool) -> Result<()> {
+    pub fn run_bot_command(&self, msg: BotMessage, args: Vec<String>, edited: bool, spammy_commands: bool) -> Result<()> {
         let bot_tbl: Table = self.inner.globals().get("bot")?;
         let on_command_fn: Function = bot_tbl.get("on_command")?;
 
         let thread = self.inner.create_thread(on_command_fn)?;
         let channel_id = msg.channel().id();
-        thread.resume((msg.clone(), args, edited))?;
+        thread.resume((msg.clone(), args, edited, spammy_commands))?;
 
         self.create_async_thread(thread, Some(channel_id))?;
 
