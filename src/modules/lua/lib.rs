@@ -51,7 +51,7 @@ pub fn include_lua<'a>(
             let source = read_to_string(&path)?;
             state
                 .load(&source)
-                .set_name(name.as_os_str().to_string_lossy().as_bytes())?
+                .set_name(name.as_os_str().to_string_lossy())?
                 .eval()?;
         }
     } else {
@@ -61,7 +61,7 @@ pub fn include_lua<'a>(
         let source = read_to_string(path)?;
         let result = state
             .load(&source)
-            .set_name(lua_path.as_os_str().to_string_lossy().as_bytes())?
+            .set_name(lua_path.as_os_str().to_string_lossy())?
             .eval()?;
 
         return Ok(Some(result));
