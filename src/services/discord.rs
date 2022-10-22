@@ -15,7 +15,6 @@ use serenity::{
     prelude::*,
     CacheAndHttp,
 };
-use songbird::SerenityInit;
 use std::{
     str::FromStr,
     sync::{Arc, Mutex},
@@ -27,9 +26,8 @@ mod channel;
 mod message;
 mod server;
 mod user;
-mod voice;
 
-use self::{user::DiscordUser, voice::DiscordVoiceConnection};
+use self::user::DiscordUser;
 
 use super::{Channel, Service, ServiceFeatures, ServiceKind};
 use crate::bot::Bot;
@@ -157,7 +155,6 @@ impl Service for DiscordService {
         ServiceFeatures::EDIT.bits()
             | ServiceFeatures::EMBED.bits()
             | ServiceFeatures::REACT.bits()
-            | ServiceFeatures::VOICE.bits()
             | ServiceFeatures::MARKDOWN.bits(),
     );
 
@@ -166,7 +163,6 @@ impl Service for DiscordService {
     type User = user::DiscordUser;
     type Channel = channel::DiscordChannel;
     type Server = server::DiscordServer;
-    type VoiceConnection = voice::DiscordVoiceConnection;
 
     type MessageId = u64;
     type ChannelId = u64;
@@ -188,7 +184,6 @@ impl Service for DiscordService {
         loop {
             match Client::builder(&config.token, GatewayIntents::all())
                 .event_handler(SerenityHandler::new(service.clone()))
-                .register_songbird()
                 .await
             {
                 Ok(c) => break client = c,
@@ -371,23 +366,6 @@ impl Service for DiscordService {
 
         Ok(())
     }
-
-    async fn join_voice(
-        &self,
-        server_id: u64,
-        channel_id: u64,
-    ) -> Result<Arc<DiscordVoiceConnection>> {
-        let ctx = self.get_ctx()?;
-        let manager = songbird::get(&ctx)
-            .await
-            .ok_or_else(|| anyhow::anyhow!("unable to get songbird manager"))?;
-
-        let (call, _) = manager.join(server_id, channel_id).await;
-
-        Ok(Arc::new(DiscordVoiceConnection::new(
-            server_id, channel_id, call,
-        )))
-    }
 }
 
 impl DiscordService {
@@ -405,14 +383,6 @@ impl DiscordService {
             channel,
             self.clone(),
         )))
-    }
-
-    fn get_ctx(&self) -> Result<Arc<Context>> {
-        if let Some(ctx) = self.context.load().as_ref() {
-            Ok(ctx.clone())
-        } else {
-            Err(anyhow::anyhow!("error getting discord context"))
-        }
     }
 }
 

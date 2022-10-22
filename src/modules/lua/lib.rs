@@ -14,7 +14,6 @@ pub mod bot;
 pub mod image;
 pub mod os;
 pub mod tags;
-pub mod voice;
 
 fn remove_upwards_components(path: &Path) -> PathBuf {
     let mut p = PathBuf::new();

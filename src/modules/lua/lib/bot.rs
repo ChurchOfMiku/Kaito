@@ -128,7 +128,6 @@ pub fn bot_flags(state: &Lua, bot_tbl: &LuaTable) -> Result<()> {
     features_tbl.set("Edit", ServiceFeatures::EDIT.bits())?;
     features_tbl.set("Embed", ServiceFeatures::EMBED.bits())?;
     features_tbl.set("React", ServiceFeatures::REACT.bits())?;
-    features_tbl.set("Voice", ServiceFeatures::VOICE.bits())?;
     features_tbl.set("Markdown", ServiceFeatures::MARKDOWN.bits())?;
 
     bot_tbl.set("FEATURES", features_tbl)?;

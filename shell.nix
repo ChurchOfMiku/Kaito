@@ -3,9 +3,9 @@
 pkgs.mkShell {
   buildInputs = with pkgs; [
     # Rust
-    cargo
-    rustc
-    rustfmt
+    #cargo
+    #rustc
+    #rustfmt
     clang
     # Deps
     pkg-config

@@ -77,6 +77,7 @@ pub fn http_fetch<'a>(
                     [10, ..] => true,
                     [172, b, ..] if b >= 16 && b <= 31 => true,
                     [192, 168, ..] => true,
+                    [100, 64..=255, ..] => true,
                     _ => false,
                 },
                 IpAddr::V6(_) => false, // IPv6 should be disabled in networking

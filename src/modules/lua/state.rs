@@ -26,7 +26,6 @@ use super::{
         os::lib_os,
         r#async::lib_async,
         tags::lib_tags,
-        voice::lib_voice,
     },
     LuaSandboxReplies,
 };
@@ -140,7 +139,6 @@ impl LuaState {
             )?;
             http::lib_http(&inner, async_sender.clone())?;
             lib_tags(&inner, bot, async_sender.clone())?;
-            lib_voice(&inner, bot, async_sender.clone())?;
             inner.set_named_registry_value("__ASYNC_THREADS", inner.create_table()?)?;
             inner.set_named_registry_value("__ASYNC_THREADS_CHANNELS", inner.create_table()?)?;
             include_lua(&inner, &lua_root_path, "bot.lua")?;
