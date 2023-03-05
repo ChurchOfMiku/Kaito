@@ -2,7 +2,7 @@ tags = tags or {}
 
 tags.MAX_NAME_LIMIT = 20
 tags.MAX_VALUE_LIMIT = 4096
-tags.MAX_USER_TAGS = 200
+tags.MAX_USER_TAGS = 250
 
 tags.VARS = {
     args = function(ctx) return table.concat(ctx.extra_args, "") end,

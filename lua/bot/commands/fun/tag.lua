@@ -66,7 +66,7 @@ bot.add_command("tag", {
                     return ctx.msg:reply("error: the tag value cannot be empty"):await()
                 end
 
-                if tags.count_user_tags(ctx.msg.author):await() > tags.MAX_USER_TAGS then
+                if tags.count_user_tags(ctx.msg.author, ctx.msg.channel.server):await() > tags.MAX_USER_TAGS then
                     return ctx.msg:reply("error: the max tags owned limit on " .. tags.MAX_USER_TAGS .. " tags has been reached"):await()
                 end
 

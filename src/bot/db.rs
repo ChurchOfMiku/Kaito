@@ -370,9 +370,12 @@ impl BotDb {
         Ok(())
     }
 
-    pub async fn count_uid_tags(&self, uid: Uid) -> Result<i64> {
-        let (count,) = sqlx::query_as("SELECT COUNT(*) FROM tags WHERE uid = ?")
+    pub async fn count_uid_tags(&self, uid: Uid, server_id: ServerId) -> Result<i64> {
+        let sid = self.get_sid(server_id).await?;
+
+        let (count,) = sqlx::query_as("SELECT COUNT(*) FROM tags WHERE uid = ? AND sid = ?")
             .bind(uid)
+            .bind(sid)
             .fetch_one(self.pool())
             .await?;
 

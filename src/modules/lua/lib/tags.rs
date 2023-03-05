@@ -184,15 +184,16 @@ pub fn lib_tags(state: &Lua, bot: &Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
 
     let bot2 = bot.clone();
     let sender2 = sender.clone();
-    let count_user_tags_fn = state.create_function(move |state, user: LuaAnyUserData| {
+    let count_user_tags_fn = state.create_function(move |state, (user, server): (LuaAnyUserData, LuaAnyUserData)| {
         let bot = bot2.clone();
         let user = user.borrow::<BotUser>()?.clone();
+        let server = server.borrow::<BotServer>()?.clone();
 
         let fut = create_lua_future!(
             state,
             sender2,
             (),
-            bot.db().count_uid_tags(user.uid()),
+            bot.db().count_uid_tags(user.uid(), server.id()),
             |_state, _data: (), res: Result<i64>| { Ok(res?) }
         );
 
