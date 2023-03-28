@@ -58,7 +58,7 @@ impl Module for UtilsModule {
             static ref TWITTER_RE: regex::Regex = ci_regex!(r#"https?://(?:www.)?twitter.com/.+/status(?:es)?/(\d+)(?:.+ )?"#).unwrap();
 
             /// Convert media.discordapp.net to cdn.discordapp.com
-            static ref DISCORD_MEDIA_VIDEO_RE: regex::Regex = ci_regex!(r#"https?://media.discordapp.net/attachments/\d+/\d+/\S+\.(?:mp4|mov|webm|mkv|flv|wmv|avi|mxf|mpg)"#).unwrap();
+            // static ref DISCORD_MEDIA_VIDEO_RE: regex::Regex = ci_regex!(r#"https?://media.discordapp.net/attachments/\d+/\d+/\S+\.(?:mp4|mov|webm|mkv|flv|wmv|avi|mxf|mpg)"#).unwrap();
         }
 
         let user = self
@@ -77,7 +77,7 @@ impl Module for UtilsModule {
             Reddit,
             Tiktok,
             Twitter,
-            DiscordMediaVideoLink,
+            // DiscordMediaVideoLink,
         }
 
         impl MediaService {
@@ -106,12 +106,12 @@ impl Module for UtilsModule {
                 .map(|cap| (MediaService::Twitter, cap))
                 .collect(),
         );
-        matches.append(
+        /*matches.append(
             &mut DISCORD_MEDIA_VIDEO_RE
                 .captures_iter(msg.content())
                 .map(|cap| (MediaService::DiscordMediaVideoLink, cap))
                 .collect(),
-        );
+        );*/
 
         if !matches.is_empty() {
             let channel = msg.channel().await?;
@@ -131,10 +131,10 @@ impl Module for UtilsModule {
                     let should_download = service.should_download();
 
                     // Convert media.discordapp.net to cdn.discordapp.com
-                    if service == MediaService::DiscordMediaVideoLink {
+                    /*if service == MediaService::DiscordMediaVideoLink {
                         out.push(media_url.replace("media.discordapp.net", "cdn.discordapp.com"));
                         continue;
-                    }
+                    }*/
 
                     let output = tokio::process::Command::new("yt-dlp")
                         .arg("-g")
