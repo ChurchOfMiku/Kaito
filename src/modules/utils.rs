@@ -57,7 +57,7 @@ impl Module for UtilsModule {
             static ref TIKTOK_RE: regex::Regex = ci_regex!(r#"https?://(?:www.|vm.)?tiktok.com/.+(?: )?"#).unwrap();
             static ref TWITTER_RE: regex::Regex = ci_regex!(r#"https?://(?:www.)?twitter.com/.+/status(?:es)?/(\d+)(?:.+ )?"#).unwrap();
 
-            /// Convert media.discordapp.net to cdn.discordapp.com
+            // /// Convert media.discordapp.net to cdn.discordapp.com
             // static ref DISCORD_MEDIA_VIDEO_RE: regex::Regex = ci_regex!(r#"https?://media.discordapp.net/attachments/\d+/\d+/\S+\.(?:mp4|mov|webm|mkv|flv|wmv|avi|mxf|mpg)"#).unwrap();
         }
 
