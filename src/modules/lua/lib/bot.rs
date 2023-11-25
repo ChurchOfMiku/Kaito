@@ -82,7 +82,7 @@ fn table_to_embed(tbl: LuaTable) -> Result<MessageEmbed> {
 
     if let Ok(timestamp) = tbl.get::<&str, String>("timestamp") {
         let dt = NaiveDateTime::parse_from_str(&timestamp, "%Y-%m-%dT%H:%M:%S%z")?;
-        embed.timestamp = Some(chrono::DateTime::<Utc>::from_utc(dt, Utc));
+        embed.timestamp = Some(chrono::DateTime::from_naive_utc_and_offset(dt, Utc));
     }
 
     if let Ok(title) = tbl.get("title") {

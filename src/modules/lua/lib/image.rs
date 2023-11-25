@@ -272,7 +272,7 @@ fn create_image_info<'a>(wand: &mut MagickWand<'a>) -> Result<ImageInfo> {
         width: wand.get_image_width(),
         height: wand.get_image_height(),
         images: wand.get_number_images(),
-        format: wand.get_image_format()?.to_lowercase(),
+        format: wand.get_image_format().to_str_lossy().to_owned().to_lowercase(),
     })
 }
 
@@ -361,7 +361,7 @@ async fn create_image(sender: Sender<LuaAsyncCallback>, data: Vec<u8>, svg: bool
             wand.trim_image(1.0)?;
             let data = wand
                 .write_image_blob()
-                .ok_or_else(|| anyhow::anyhow!("unable to convert svg"))?;
+                .ok_or_else(|| anyhow::anyhow!("unable to convert svg"))?.to_vec();
 
             let info = create_image_info(&mut wand)?;
             drop(wand);
@@ -419,7 +419,7 @@ pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
 
                 wand.draw_image(
                     &draw
-                        .set_fill_color(&PixelWand::new().set_color(&background))
+                        .set_fill_color(&PixelWand::new().set_color(background))
                         .set_stroke_line_cap(types::LineCap::SquareCap)
                         .rectangle(-8.0, -8.0, (width + 8) as f64, (height + 8) as f64),
                 )
@@ -428,7 +428,7 @@ pub fn lib_image(state: &Lua, bot: Arc<Bot>, sender: Sender<LuaAsyncCallback>) -
 
             let data = wand
                 .write_image_blob()
-                .ok_or_else(|| LuaError::RuntimeError("unable to write image".into()))?;
+                .ok_or_else(|| LuaError::RuntimeError("unable to write image".into()))?.to_vec();
             let info =
                 create_image_info(&mut wand).map_err(|e| LuaError::RuntimeError(e.to_string()))?;
             drop(wand);
@@ -770,7 +770,7 @@ macro_rules! image_method {
                         data.append(
                             &mut wand
                                 .write_image_blob()
-                                .ok_or_else(|| anyhow::anyhow!("unable to write image"))?,
+                                .ok_or_else(|| anyhow::anyhow!("unable to write image"))?.to_vec(),
                         );
                     }
 
@@ -814,7 +814,7 @@ impl UserData for Image {
         });
 
         image_method!(methods, "colorize", true, |(colorize, opacity)|: (String, String), |wand| {
-            wand.colorize_image(PixelWand::new().set_color(&colorize), PixelWand::new().set_color(&opacity))?
+            wand.colorize_image(PixelWand::new().set_color(colorize.clone()), PixelWand::new().set_color(opacity.clone()))?
         });
 
         image_method!(methods, "composite", true, |(other_image, operator, x, y)|: (Image, CompositeOperator, i64, i64), |wand| {
@@ -834,11 +834,11 @@ impl UserData for Image {
                     DrawCommand::Circle { ox, oy, px, py } => draw_wand.circle(ox, oy, px, py),
                     DrawCommand::Color { x, y, paint_method } => draw_wand.color(x, y, paint_method.inner()),
                     DrawCommand::Ellipse { ox, oy, rx, ry, start, end } => draw_wand.ellipse(ox, oy, rx, ry, start, end),
-                    DrawCommand::SetFillColor { color } => draw_wand.set_fill_color(PixelWand::new().set_color(&color)),
+                    DrawCommand::SetFillColor { color } => draw_wand.set_fill_color(PixelWand::new().set_color(color)),
                     DrawCommand::SetFillOpacity(opacity) => draw_wand.set_fill_opacity(opacity),
                     DrawCommand::SetFillRule(rule) => draw_wand.set_fill_rule(rule.inner()),
-                    DrawCommand::SetFont(font) => draw_wand.set_font(&font),
-                    DrawCommand::SetFontFamily(font_family) => draw_wand.set_font_family(&font_family),
+                    DrawCommand::SetFont(font) => draw_wand.set_font(font),
+                    DrawCommand::SetFontFamily(font_family) => draw_wand.set_font_family(font_family),
                     DrawCommand::SetFontSize(font_size) => draw_wand.set_font_size(font_size),
                     DrawCommand::SetFontStyle(font_style) => draw_wand.set_font_style(font_style.inner()),
                     DrawCommand::Line { sx, sy, ex, ey } => draw_wand.line(sx, sy, ex, ey),
@@ -879,14 +879,14 @@ impl UserData for Image {
                     DrawCommand::SkewX(degrees) => draw_wand.skew_x(degrees),
                     DrawCommand::SkewY(degrees) => draw_wand.skew_y(degrees),
                     DrawCommand::SetStrokeAntiAlias(aa) => draw_wand.set_stroke_antialias(aa),
-                    DrawCommand::SetStrokeColor(color) => draw_wand.set_stroke_color(PixelWand::new().set_color(&color)),
+                    DrawCommand::SetStrokeColor(color) => draw_wand.set_stroke_color(PixelWand::new().set_color(color)),
                     DrawCommand::SetStrokeLineCap(cap) => draw_wand.set_stroke_line_cap(cap.inner()),
                     DrawCommand::SetStrokeLineJoin(join) => draw_wand.set_stroke_line_join(join.inner()),
                     DrawCommand::SetStrokeWidth(width) => draw_wand.set_stroke_width(width),
                     DrawCommand::SetTextAntiAlias(aa) => draw_wand.set_text_antialias(aa),
                     DrawCommand::SetTextDecoration(decoration) => draw_wand.set_text_decoration(decoration.inner()),
-                    DrawCommand::SetTextUnderColor(color) => draw_wand.set_text_under_color(PixelWand::new().set_color(&color)),
-                    DrawCommand::Text { align, x, y, text } => draw_wand.set_gravity(align.inner()).annotation(x, y, &text),
+                    DrawCommand::SetTextUnderColor(color) => draw_wand.set_text_under_color(PixelWand::new().set_color(color)),
+                    DrawCommand::Text { align, x, y, text } => draw_wand.set_gravity(align.inner()).annotation(x, y, text),
                     DrawCommand::Translate { x, y } => draw_wand.translate(x, y),
                     DrawCommand::SetViewbox { x1, y1, x2, y2 } => draw_wand.set_viewbox(x1, y1, x2, y2),
                 }
@@ -936,7 +936,7 @@ impl UserData for Image {
         });
 
         image_method!(methods, "opaque", true, |(target, fill, fuzz)|: (String, String, f64), |wand| {
-            wand.opaque_image(PixelWand::new().set_color(&target), PixelWand::new().set_color(&fill), fuzz)?
+            wand.opaque_image(PixelWand::new().set_color(target.clone()), PixelWand::new().set_color(fill.clone()), fuzz)?
         });
 
         image_method!(methods, "radial_blur", true, |angle|: f64, |wand| {
@@ -960,7 +960,7 @@ impl UserData for Image {
         });
 
         image_method!(methods, "rotate", true, |(background, degress)|: (String, f64), |wand| {
-            wand.rotate_image(PixelWand::new().set_color(&background), degress)?
+            wand.rotate_image(PixelWand::new().set_color(background.clone()), degress)?
         });
 
         image_method!(methods, "sample", true, |(columns, rows)|: (u64, u64), |wand| {
@@ -976,7 +976,7 @@ impl UserData for Image {
         });
 
         image_method!(methods, "set_background", true, |background|: String, |wand| {
-            wand.set_image_background_color(PixelWand::new().set_color(&background))?
+            wand.set_image_background_color(PixelWand::new().set_color(background.clone()))?
         });
 
         image_method!(methods, "sharpen", true, |(radius, sigma)|: (f64, f64), |wand| {
@@ -988,7 +988,7 @@ impl UserData for Image {
         });
 
         image_method!(methods, "shear", true, |(background, x_shear, y_shear)|: (String, f64, f64), |wand| {
-            wand.shear_image(PixelWand::new().set_color(&background), x_shear, y_shear)?
+            wand.shear_image(PixelWand::new().set_color(background.clone()), x_shear, y_shear)?
         });
 
         image_method!(methods, "solarize", true, |threshold|: f64, |wand| {
@@ -1018,17 +1018,17 @@ impl UserData for Image {
         });
 
         image_method!(methods, "tint", true, |(tint, opacity)|: (String, String), |wand| {
-            wand.tint_image(PixelWand::new().set_color(&tint), PixelWand::new().set_color(&opacity))?
+            wand.tint_image(PixelWand::new().set_color(tint.clone()), PixelWand::new().set_color(opacity.clone()))?
         });
 
         image_method!(methods, "transform", false, |(crop, geometry)|: (String, String), |wand| {
             wand
-                .transform_image(&crop, &geometry)
+                .transform_image(crop.clone(), &geometry)
                 .ok_or_else(|| anyhow::anyhow!("error transforming image"))?
         });
 
         image_method!(methods, "transparent", true, |(target, opacity, fuzz)|: (String, u8, f64), |wand| {
-            wand.transparent_image(PixelWand::new().set_color(&target), opacity, fuzz)?
+            wand.transparent_image(PixelWand::new().set_color(target.clone()), opacity, fuzz)?
         });
 
         image_method!(methods, "trim", true, |trim|: f64, |wand| {

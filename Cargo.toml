@@ -1,7 +1,7 @@
 [package]
 name = "kaito"
 version = "0.1.0"
-authors = ["Mats A. <mats@mats.sh>"]
+authors = ["Mats <mats@mats.sh>"]
 edition = "2018"
 
 [dependencies]
@@ -15,7 +15,7 @@ crossbeam = "0"
 emojis = "0"
 futures = "0.3"
 glob = "0.3"
-graphicsmagick = { git = "https://github.com/m4tsa/graphicsmagick-rs.git" }
+graphicsmagick = { git = "https://github.com/Myaats/graphicsmagick-rs.git" }
 governor = "0.4"
 hyper = { version = "0.14", features = [ "stream", "client", "http1" ] }
 hyper-tls = "0.5"
@@ -33,5 +33,5 @@ serde_json = "1"
 serenity = { version = "0.11", default-features = false, features = ["client", "cache", "gateway", "native_tls_backend", "model"] }
 thiserror = "1"
 toml = "0.5"
-sqlx = { version = "0.5", features = ["sqlite", "runtime-tokio-native-tls"] }
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-native-tls"] }
 url = "2"
